@@ -1,0 +1,399 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Press+Start+2P&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .animate-bounce-slow {
+    animation: bounce 3s infinite;
+  }
+}
+
+/* ========================================
+   Global Styles
+   ======================================== */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'JetBrains Mono', monospace;
+  background-color: #f5f5dc;
+  color: #333;
+  line-height: 1.6;
+}
+
+/* ========================================
+   Custom Components
+   ======================================== */
+
+@layer components {
+
+  /* Retro Card */
+  .retro-card {
+    @apply bg-retro-card border-2 border-retro-border rounded-lg p-6 shadow-retro transition-all duration-200;
+  }
+
+  .retro-card:hover {
+    @apply shadow-retro-hover transform -translate-y-1;
+  }
+
+  /* Retro Button */
+  .retro-btn {
+    @apply px-6 py-3 border-2 border-retro-border rounded-lg font-medium transition-all duration-200 cursor-pointer;
+  }
+
+  .retro-btn-primary {
+    @apply retro-btn bg-retro-accent text-white hover:bg-retro-accent-hover shadow-retro;
+  }
+
+  .retro-btn-primary:hover {
+    @apply shadow-retro-hover transform -translate-y-1;
+  }
+
+  .retro-btn-secondary {
+    @apply retro-btn bg-white text-retro-border hover:bg-gray-100 shadow-retro;
+  }
+
+  .retro-btn-secondary:hover {
+    @apply shadow-retro-hover transform -translate-y-1;
+  }
+
+  /* Retro Input */
+  .retro-input {
+    @apply w-full px-4 py-3 border-2 border-retro-border rounded-lg focus:outline-none focus:ring-2 focus:ring-retro-accent transition-all;
+  }
+
+  /* Retro Select */
+  .retro-select {
+    @apply retro-input cursor-pointer;
+  }
+
+  /* Retro Checkbox */
+  .retro-checkbox {
+    @apply w-5 h-5 border-2 border-retro-border rounded cursor-pointer accent-retro-accent;
+  }
+
+  /* Pixel Header */
+  .pixel-header {
+    @apply font-pixel text-sm tracking-wider;
+  }
+
+  /* Badge */
+  .retro-badge {
+    @apply inline-block px-3 py-1 text-xs font-medium border-2 border-retro-border rounded-full;
+  }
+
+  .badge-blog {
+    @apply retro-badge bg-blue-100 text-blue-800;
+  }
+
+  .badge-youtube {
+    @apply retro-badge bg-red-100 text-red-800;
+  }
+
+  .badge-linkedin {
+    @apply retro-badge bg-blue-100 text-blue-700;
+  }
+
+  .badge-shorts {
+    @apply retro-badge bg-purple-100 text-purple-800;
+  }
+
+  .badge-reels {
+    @apply retro-badge bg-pink-100 text-pink-800;
+  }
+}
+
+/* ========================================
+   Animations
+   ======================================== */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes pulse-subtle {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.8;
+  }
+}
+
+.pulse-subtle {
+  animation: pulse-subtle 2s ease-in-out infinite;
+}
+
+/* ========================================
+   Scrollbar Styling
+   ======================================== */
+
+::-webkit-scrollbar {
+  width: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f5f5dc;
+  border: 2px solid #333;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #4a90e2;
+  border: 2px solid #333;
+  border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #357abd;
+}
+
+/* ========================================
+   Loading Spinner
+   ======================================== */
+
+.spinner {
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #4a90e2;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* ========================================
+   ReactQuill Editor Overrides
+   ======================================== */
+
+/* Match editor font to app font (JetBrains Mono) */
+.ql-editor {
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 0.875rem !important;
+  /* text-sm equivalent */
+  line-height: 1.6 !important;
+  color: #333 !important;
+}
+
+.ql-editor p,
+.ql-editor span,
+.ql-editor li {
+  font-family: inherit !important;
+}
+
+.ql-editor.ql-blank::before {
+  font-family: 'JetBrains Mono', monospace !important;
+  font-style: normal !important;
+  color: #9ca3af !important;
+}
+
+/* Fullscreen editor container - prevent flicker */
+.fullscreen-editor-container {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background-color: #f5f5dc;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* Prevent all repaints and transforms */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: auto;
+}
+
+/* Kill all hover/transform effects when in fullscreen */
+.fullscreen-editor-container,
+.fullscreen-editor-container * {
+  animation: none !important;
+  transition: none !important;
+}
+
+.fullscreen-editor-container .retro-card,
+.fullscreen-editor-container .retro-card:hover {
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* Fullscreen Quill takes remaining space */
+.fullscreen-editor-container .ql-container {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.fullscreen-editor-container .ql-editor {
+  min-height: 100%;
+}
+
+/* Fix ReactQuill border overflow issues */
+.quill-wrapper {
+  overflow: hidden;
+}
+
+.quill-wrapper .quill {
+  border: none !important;
+}
+
+.quill-wrapper .ql-toolbar {
+  border: none !important;
+  border-bottom: 1px solid #e5e7eb !important;
+}
+
+.quill-wrapper .ql-container {
+  border: none !important;
+}
+
+/* Prevent any extra borders or shadows from Quill */
+.ql-toolbar.ql-snow,
+.ql-container.ql-snow {
+  border: none !important;
+}
+
+/* ========================================
+   Idea Content Box - Colorful Markdown Styles
+   ======================================== */
+
+.idea-content-box {
+  background: linear-gradient(135deg, #f8fafc 0%, #e0f2fe 50%, #fce7f3 100%);
+  border: 2px solid #e879f9;
+  box-shadow: 0 4px 6px -1px rgba(168, 85, 247, 0.2), 0 2px 4px -1px rgba(168, 85, 247, 0.1);
+}
+
+/* Markdown Content Styling */
+.markdown-content {
+  color: #1f2937;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3 {
+  color: #7c3aed;
+  font-weight: 700;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.markdown-content h1 {
+  font-size: 1.5rem;
+  border-bottom: 2px solid #a855f7;
+  padding-bottom: 0.25rem;
+}
+
+.markdown-content h2 {
+  font-size: 1.25rem;
+  color: #9333ea;
+}
+
+.markdown-content h3 {
+  font-size: 1.1rem;
+  color: #a855f7;
+}
+
+.markdown-content p {
+  margin-bottom: 0.75rem;
+  line-height: 1.7;
+}
+
+.markdown-content strong {
+  color: #db2777;
+  font-weight: 600;
+}
+
+.markdown-content em {
+  color: #0891b2;
+  font-style: italic;
+}
+
+.markdown-content code {
+  background: #fef3c7;
+  color: #92400e;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.875em;
+}
+
+.markdown-content pre {
+  background: #1e1b4b;
+  color: #e0e7ff;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin: 0.75rem 0;
+}
+
+.markdown-content pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  margin-left: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.markdown-content li {
+  margin-bottom: 0.25rem;
+}
+
+.markdown-content li::marker {
+  color: #a855f7;
+}
+
+.markdown-content a {
+  color: #2563eb;
+  text-decoration: underline;
+  font-weight: 500;
+}
+
+.markdown-content a:hover {
+  color: #7c3aed;
+}
+
+.markdown-content blockquote {
+  border-left: 4px solid #a855f7;
+  background: rgba(168, 85, 247, 0.1);
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+  border-radius: 0 0.5rem 0.5rem 0;
+  font-style: italic;
+  color: #6b21a8;
+}
+
+.markdown-content hr {
+  border: none;
+  border-top: 2px dashed #d8b4fe;
+  margin: 1rem 0;
+}

@@ -1,0 +1,52 @@
+I sent an audio note, received nothing back on my bot.
+I tried creating manual entry, did not work, it said failed to create.
+I can see the logs on system status, can you ensure each one has timestamp, i think i saw one or two of them did not.
+stop doing gemini health check, do frontend and back end instead. 
+you were doing one of the healthchecks every min, if its too much scale it back to every 5 mins.
+
+I saw this twice for gemini check i am not doing all that much is it because every min ping/check?. then stop gemini check. if need go back to flash 1.5 i remember it being more generous.
+429 Quota exceeded for quota metric 'Read API requests' and limit 'Model operations request limit per minute for a region' of service 'generativelanguage.googleapis.com' for consumer 'project_number:628226464593'. [reason: "RATE_LIMIT_EXCEEDED" domain: "googleapis.com" metadata { key: "service" value: "generativelanguage.googleapis.com" } metadata { key: "quota_unit" value: "1/min/{project}/{region}" } metadata { key: "quota_metric" value: "generativelanguage.googleapis.com/model_requests" } metadata { key: "quota_location" value: "asia-southeast1" } metadata { key: "quota_limit" value: "ModelRequestsPerMinutePerProjectPerRegion" } metadata { key: "quota_limit_value" value: "200" } metadata { key: "consumer" value: "projects/628226464593" } , links { description: "Request a higher quota limit." url: "https://cloud.google.com/docs/quotas/help/request_increase" } ]
+
+I see bot never showing online but on my phone i can see bot is just fine. so may be our app not able to talk or something.
+
+Also i see one note entry in audio, but i can;t click it, where do i see notes once they are in?
+
+
+
+
+voila! it looks absolutely beautiful. I tested a few things we need to work on them. here are my thoghts after a few things i tested. You need to make note of all of them, and then let's build a plan to fix them. let prioritize that plan so we know what we are fixing and in what order.
+
+1. I think you need to list me all ways where the app is processing something or doing sometihng and it depends on inputs i provided. so i can decide and provide you the right tools, or model names or how i want to run this.
+1.1 so for example, I tried sending a voice note and i think it failed because it tried gemini. So i asked Gemini web app and it said, gemini can do this but not sure. so we may use replicate and we can pick a cheaper tts model, like qwen 3 tts? - here is the documentation - https://replicate.com/qwen/qwen3-tts/api, it says 1 usd for 50K characters, so i need you to build some math in so i know how much it costed me. so may be each time there in put processing, output, store whatever, lets make a page where there is simple table that shows what it did, what it used, and how much it costed. 
+1.2 now if it is image based , well i think we use gemini here too.
+1.3 if it is a video link from me, then again we can use some tools like youttube transcript and then send to gemini.
+1.4 if its a link to some blog or article, same we can send that to gemini.
+1.5 wherever i have said gemini we can find one of the gemini flash models, 1.5 or 2 or 2.5 or 3. whichever is available a my api key for free. my total work is not going to be all that, so we should not hit the rate limit
+1.6 but first what all are you using for what action, so we can validate each thing.
+2. make a validation tool, so when i start this app, it has to have some health check, and it should say, gemini - online, B - online, C - online, Databse-nexus log - online. and then make a page on our web app saying system status, and it should be able to test/ping/call every 15 mins or so. so at the start up and then every 15 mins. so we know what is not working. while app is up, and something goes down, let's say i accidentally stop the database then it should pop notification, saying critical alert, make that sound and show me a pop up with what is down.
+3. i just made a voice note and here is the error and also tried adding entry manually and following is error for that.
+
+Google Sheets not configured: [Errno 2] No such file or directory: './credentials/google-sheets-creds.json'
+🤖 NexusLog Telegram Bot is running...
+Gemini audio transcription error: module 'google.generativeai' has no attribute 'upload_file'
+Gemini categorization error: 404 models/gemini-2.0-flash-exp is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+
+
+[SQL: INSERT INTO entries (raw_content, processed_content, content_type, file_path, category_id, subcategory_id, source, metadata, created_at, updated_at) VALUES (%(raw_content)s, %(processed_content)s, %(content_type)s, %(file_path)s, %(category_id)s, %(subcategory_id)s, %(source)s, %(metadata)s, %(created_at)s, %(updated_at)s) RETURNING entries.id]
+[parameters: {'raw_content': '\nBased on your detailed description (55%+ win rate, consistent but minimal profits of 1R/0.8R, entering after 10 AM, exiting by 3:15 PM), I understa ... (7738 characters truncated) ... n\n*(P.S. This approach has been used by 200+ Indian intraday traders to hit 1.5R+ in 2024 — no fluff, just what works for your specific situation.)*', 'processed_content': '\nBased on your detailed description (55%+ win rate, consistent but minimal profits of 1R/0.8R, entering after 10 AM, exiting by 3:15 PM), I understa ... (7738 characters truncated) ... n\n*(P.S. This approach has been used by 200+ Indian intraday traders to hit 1.5R+ in 2024 — no fluff, just what works for your specific situation.)*', 'content_type': 'text', 'file_path': None, 'category_id': '3', 'subcategory_id': '', 'source': 'manual', 'metadata': '{"is_content_idea": false, "output_types": []}', 'created_at': datetime.datetime(2026, 1, 31, 11, 38, 27, 651426), 'updated_at': datetime.datetime(2026, 1, 31, 11, 38, 27, 651426)}]
+(Background on this error at: https://sqlalche.me/e/20/9h9h)
+
+4. when the app starts it has 3 terminal windows open - NexusLog Backend - python  app.py, NexusLog Bot - python  telegram_bot.py, and C:\WINDOWS\system32\cmd.exe - do these need remain open, can we hide them or something, or close them but all should continue to function. I get it these show you real time log, but can we rather log errors and infor, verbose etc. to specific log files in one location? you decide which is more appropriate location for each of them. then make a page for troubleshooting and logging right on our app itself. where i can see logs and read them and troubleshoot them. so may be page for log viewing, simple tabular format.
+
+5. when you respond back in voice, as i have stated in my requirement, i want you to use https://replicate.com/qwen/qwen3-tts/api model, shows you the documentation as well. we agree on Jarvis voice. this is 50K characters for a dollar, so already stated find a way to log cost and processing and etc. if you can find a cheaper model or free model, lets talk about that.
+
+6. When i was doing manual entry, the actual content can show only 2-3 lines, i need that to be bigger. or you know we have that button to click in the corner somewhere so it can make thta box bigger, like it opens outside the browser and browser is at the back, so i can see more stuff there. also it should be a full blown text editor with emojis, ability to add image, links, color the fonts etc. so i know when i review and see the idea, it should look like a blog or something.
+
+7. last a tiny thing on UI. top left where it says "NEXUS LOG Your Neural Nexus for Ideas: I need that section to be a little bigger and log to be little bigger too. also can we animate the logo a little bit, like neurons firing off or something? again this is not a priority, let's fix other issues first.
+
+First i need you to summarize my notes/inputs/feedback. then put them into buckets and plan for fixing each of them. and then prioritize and then show me the implementation plan 
+
+
+
+
+

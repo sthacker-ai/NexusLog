@@ -1,0 +1,48 @@
+Name,Type,Dimensions (e.g. location),Value,Current usage percentage,Current usage,Adjustable
+GenerateContent requests per day with Search functionality enabled (free tier).,Quota,model : gemini-2.0,1500,0.00%,0,Yes
+Request limit per model per day for a project in the free tier,Quota,model : gemini-2.0-flash-live,Unlimited,-,0,Yes
+Request limit per model per minute for a project in the free tier,Quota,model : gemini-2.0-flash-live,Unlimited,-,0,Yes
+GenerateContent requests per day with Search functionality enabled (free tier).,Quota,model : gemini-2.5,1500,0.00%,0,Yes
+GenerateContent free tier input token count limit per model per day,Quota,model : gemini-2.5-flash,Unlimited,-,0,Yes
+GenerateContent free tier input token count limit per model per minute,Quota,model : gemini-2.5-flash,250000,0.00%,0,Yes
+Request limit per model per day for a project in the free tier,Quota,model : gemini-2.5-flash,20,0.00%,0,Yes
+Request limit per model per minute for a project in the free tier,Quota,model : gemini-2.5-flash,5,0.00%,0,Yes
+GenerateContent free tier input token count limit per model per minute,Quota,model : gemini-2.5-flash-exp,1000000,0.00%,0,Yes
+Request limit per model per day for a project in the free tier,Quota,model : gemini-2.5-flash-exp,10000,0.00%,0,Yes
+Request limit per model per minute for a project in the free tier,Quota,model : gemini-2.5-flash-exp,250,0.00%,0,Yes
+Request limit per model per minute for a project in the free tier,Quota,model : gemini-2.5-flash-exp-native-audio-thinking-dialog,Unlimited,-,0,Yes
+GenerateContent free tier input token count limit per model per minute,Quota,model : gemini-2.5-flash-lite,250000,0.00%,0,Yes
+Request limit per model per day for a project in the free tier,Quota,model : gemini-2.5-flash-lite,20,0.00%,0,Yes
+Request limit per model per minute for a project in the free tier,Quota,model : gemini-2.5-flash-lite,10,0.00%,0,Yes
+GenerateContent free tier input token count limit per model per minute,Quota,model : gemini-2.5-flash-live,1000000,0.00%,0,Yes
+Request limit per model per day for a project in the free tier,Quota,model : gemini-2.5-flash-live,Unlimited,-,0,Yes
+Request limit per model per minute for a project in the free tier,Quota,model : gemini-2.5-flash-live,Unlimited,-,0,Yes
+GenerateContent free tier input token count limit per model per minute,Quota,model : gemini-2.5-flash-native-audio-dialog,1000000,0.00%,0,Yes
+Request limit per model per day for a project in the free tier,Quota,model : gemini-2.5-flash-native-audio-dialog,Unlimited,-,0,Yes
+Request limit per model per minute for a project in the free tier,Quota,model : gemini-2.5-flash-native-audio-dialog,Unlimited,-,0,Yes
+GenerateContent free tier input token count limit per model per minute,Quota,model : gemini-2.5-flash-tts,10000,0.00%,0,Yes
+Request limit per model per day for a project in the free tier,Quota,model : gemini-2.5-flash-tts,10,0.00%,0,Yes
+Request limit per model per minute for a project in the free tier,Quota,model : gemini-2.5-flash-tts,3,0.00%,0,Yes
+GenerateContent free tier input token count limit per model per minute,Quota,model : gemini-2.5-pro-1p-freebie,1000000,0.00%,0,Yes
+Request limit per model per day for a project in the free tier,Quota,model : gemini-2.5-pro-1p-freebie,500,0.00%,0,Yes
+Request limit per model per minute for a project in the free tier,Quota,model : gemini-2.5-pro-1p-freebie,75,0.00%,0,Yes
+GenerateContent free tier input token count limit per model per day,Quota,model : gemini-3-flash,Unlimited,-,0,Yes
+GenerateContent free tier input token count limit per model per minute,Quota,model : gemini-3-flash,250000,0.00%,0,Yes
+Request limit per model per day for a project in the free tier,Quota,model : gemini-3-flash,20,0.00%,0,Yes
+Request limit per model per minute for a project in the free tier,Quota,model : gemini-3-flash,5,0.00%,0,Yes
+Embed content request count per day for a model in the free tier,Quota,model : gemini-embedding-1.0,1000,0.00%,0,Yes
+Embed content request count per minute for a model in the free tier,Quota,model : gemini-embedding-1.0,100,0.00%,0,Yes
+Embed content token limit per minute for a model in the free tier,Quota,model : gemini-embedding-1.0,30000,0.00%,0,Yes
+Embed content request count per day per user for a model in the free tier,Quota,model : gemini-embedding-1.0,1000,—,,Yes
+Embed content request count per minute per user for a model in the free tier,Quota,model : gemini-embedding-1.0,100,—,,Yes
+Embed content request count per day for a model in the free tier,Quota,model : gemini-embedding-2,1000,0.00%,0,Yes
+Embed content request count per minute for a model in the free tier,Quota,model : gemini-embedding-2,100,0.00%,0,Yes
+Embed content token limit per minute for a model in the free tier,Quota,model : gemini-embedding-2,30000,0.00%,0,Yes
+Embed content request count per day per user for a model in the free tier,Quota,model : gemini-embedding-2,1000,—,,Yes
+Embed content request count per minute per user for a model in the free tier,Quota,model : gemini-embedding-2,100,—,,Yes
+GenerateContent free tier input token count limit per model per minute,Quota,model : gemini-robotics-er-1.5-preview,250000,0.00%,0,Yes
+Request limit per model per day for a project in the free tier,Quota,model : gemini-robotics-er-1.5-preview,20,0.00%,0,Yes
+Request limit per model per minute for a project in the free tier,Quota,model : gemini-robotics-er-1.5-preview,10,0.00%,0,Yes
+Request limit per model per day for a project in the free tier,Quota,model : med-gemini,50000,0.00%,0,Yes
+Request limit per model per minute for a project in the free tier,Quota,model : med-gemini,60,0.00%,0,Yes
+Search Grounding involved request per project per day for free tier (Google Gemini API),Quota,,Unlimited,-,0,Yes
