@@ -152,46 +152,53 @@ I'll automatically categorize and process everything! 🚀
             'clean_text': clean_text if clean_text else text
         }
     
-    def _ai_process_text(self, text: str) -> dict:
+    def _ai_process_text(self, text: str) -> list:
         """
         Shared AI processing for text content (used by both text and voice handlers).
-        Returns dict with: processed_content, category, is_content_idea, title, processing_note, intent
+        Returns LIST of dicts, each with: processed_content, category, is_content_idea, title, processing_note, intent
+        Supports multi-item messages (e.g., "Add X to todo and Y as content idea")
         """
         try:
-            # AI-first processing: intent detection, spell correction, action execution
+            # AI-first processing: intent detection, spell correction, multi-item parsing
             ai_prompt = f"""You are NexusLog AI assistant. Analyze this user message and respond in JSON format only.
 
 User message: "{text}"
 
+IMPORTANT: The user may mention MULTIPLE DISTINCT ITEMS in one message. For example:
+- "Add 'review PRs' to todo and 'API patterns' as content idea" = 2 items
+- "Remember to call mom, also got an idea for AI blog post" = 2 items  
+- "Met John today for lunch" = 1 item
+
 Determine:
-1. INTENT: Is this a DIRECT NOTE (information/thought to save) or an INSTRUCTION (action to perform)?
-   - DIRECT NOTE examples: "Met John today", "idea for new app", "remember to buy milk"
-   - INSTRUCTION examples: "summarize the news on budget", "check latest AI tools", "find info about X"
+1. How many DISTINCT items/notes are in this message? Parse each separately.
 
-2. If DIRECT NOTE: Fix any spelling, grammar, improve formatting while keeping the meaning. Return clean version.
-
-3. If INSTRUCTION: Extract what action is needed and execute it if possible. Return the result.
-
-4. CATEGORY suggestion: "Content Ideas", "VibeCoding Projects", "Stock Trading", or "General Notes"
-
-5. Is this a content idea for blog/youtube/social media?
-
-6. Generate a SHORT TITLE (max 50 chars) that summarizes the content.
+2. For EACH item determine:
+   - INTENT: "note" (info to save) or "instruction" (action to perform)
+   - Category: "Content Ideas", "VibeCoding Projects", "Stock Trading", "To-Do", or "General Notes"
+   - Is it a content idea for blog/youtube/social?
+   - A SHORT TITLE (max 50 chars)
+   - Cleaned/corrected content
 
 Respond ONLY with valid JSON (no markdown, no explanation):
 {{
-  "intent": "note" or "instruction",
-  "title": "<short 5-10 word title>",
-  "processed_content": "<cleaned note OR action result>",
-  "category": "<suggested category>",
-  "is_content_idea": true/false,
-  "processing_note": "<brief note about what you did>"
-}}"""
+  "items": [
+    {{
+      "intent": "note" or "instruction",
+      "title": "<short 5-10 word title>",
+      "processed_content": "<cleaned note OR action result>",
+      "category": "<suggested category>",
+      "is_content_idea": true/false,
+      "processing_note": "<brief note about what you did>"
+    }}
+  ]
+}}
+
+If single item, return array with 1 element. If multiple items, return array with each item."""
 
             ai_response = self.ai_manager.process_message(ai_prompt)
             
-            # Default values
-            result = {
+            # Default single item
+            default_item = {
                 'processed_content': text,
                 'category': 'General Notes',
                 'is_content_idea': False,
@@ -211,37 +218,54 @@ Respond ONLY with valid JSON (no markdown, no explanation):
                     
                     ai_result = json.loads(json_str.strip())
                     
-                    result['processed_content'] = ai_result.get('processed_content', text)
-                    result['category'] = ai_result.get('category', 'General Notes')
-                    result['is_content_idea'] = ai_result.get('is_content_idea', False)
-                    result['title'] = ai_result.get('title', result['title'])
-                    result['processing_note'] = ai_result.get('processing_note', '')
-                    result['intent'] = ai_result.get('intent', 'note')
+                    # Handle new multi-item format
+                    if 'items' in ai_result and isinstance(ai_result['items'], list):
+                        items = []
+                        for item in ai_result['items']:
+                            items.append({
+                                'processed_content': item.get('processed_content', text),
+                                'category': item.get('category', 'General Notes'),
+                                'is_content_idea': item.get('is_content_idea', False),
+                                'title': item.get('title', default_item['title']),
+                                'processing_note': item.get('processing_note', ''),
+                                'intent': item.get('intent', 'note')
+                            })
+                        return items if items else [default_item]
+                    
+                    # Backward compatibility with old single-item format
+                    return [{
+                        'processed_content': ai_result.get('processed_content', text),
+                        'category': ai_result.get('category', 'General Notes'),
+                        'is_content_idea': ai_result.get('is_content_idea', False),
+                        'title': ai_result.get('title', default_item['title']),
+                        'processing_note': ai_result.get('processing_note', ''),
+                        'intent': ai_result.get('intent', 'note')
+                    }]
                     
                 except json.JSONDecodeError:
                     logger.warning(f"Failed to parse AI JSON, using raw response")
-                    result['processed_content'] = ai_response
+                    default_item['processed_content'] = ai_response
             
-            return result
+            return [default_item]
             
         except Exception as e:
             logger.error(f"AI processing error: {e}")
-            return {
+            return [{
                 'processed_content': text,
                 'category': 'General Notes',
                 'is_content_idea': False,
                 'title': text[:50] + '...' if len(text) > 50 else text,
                 'processing_note': f'AI processing failed: {str(e)[:50]}',
                 'intent': 'note'
-            }
+            }]
     
     async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
-        AI-First text message handler.
+        AI-First text message handler with multi-item support.
         ALL messages go through AI for:
         1. Intent detection (note vs instruction)
-        2. Spell/grammar correction for notes
-        3. Action execution for instructions
+        2. Multi-item parsing (single message -> multiple entries)
+        3. Spell/grammar correction for notes
         4. URL detection and processing
         """
         text = update.message.text
@@ -257,61 +281,71 @@ Respond ONLY with valid JSON (no markdown, no explanation):
         await update.message.reply_text("🧠 Processing with AI...")
         
         try:
-            # Use shared AI processing method
-            ai_result = self._ai_process_text(text)
+            # Use shared AI processing method - now returns LIST
+            ai_items = self._ai_process_text(text)
             
-            processed_content = ai_result['processed_content']
-            category_hint = ai_result['category']
-            is_content_idea = ai_result['is_content_idea']
-            processing_note = ai_result['processing_note']
-            intent = ai_result['intent']
-            title = ai_result['title']
-            
-            # If URL present, prepend it to the content
-            if urls:
-                if not any(url in processed_content for url in urls):
-                    processed_content = f"Link: {urls[0]}\n\n{processed_content}"
-            
-            # Parse metadata for output types
+            # Parse metadata for output types (shared across all items)
             metadata = self._parse_input_metadata(text)
             
-            # Override is_content_idea if AI detected it
-            if is_content_idea:
-                metadata['is_content_idea'] = True
+            entry_ids = []
             
-            # Store entry
-            entry_id = await self._process_and_store(
-                content=processed_content,
-                content_type=content_type,
-                is_content_idea=metadata['is_content_idea'] or is_content_idea,
-                output_types=metadata['output_types'],
-                category_hint=category_hint,
-                title=title
-            )
+            # Process each item
+            for ai_result in ai_items:
+                processed_content = ai_result['processed_content']
+                category_hint = ai_result['category']
+                is_content_idea = ai_result['is_content_idea']
+                title = ai_result['title']
+                
+                # If URL present, prepend it to the first content only
+                if urls and len(entry_ids) == 0:
+                    if not any(url in processed_content for url in urls):
+                        processed_content = f"Link: {urls[0]}\n\n{processed_content}"
+                
+                # Store entry
+                entry_id = await self._process_and_store(
+                    content=processed_content,
+                    content_type=content_type if len(entry_ids) == 0 else 'text',
+                    is_content_idea=metadata['is_content_idea'] or is_content_idea,
+                    output_types=metadata['output_types'],
+                    category_hint=category_hint,
+                    title=title
+                )
+                entry_ids.append((entry_id, ai_result))
             
             # Build confirmation message
-            confirmation = f"✅ Saved! Entry ID: {entry_id}\n"
-            
-            if intent == "instruction":
-                confirmation += "🤖 Executed as instruction\n"
+            if len(entry_ids) == 1:
+                entry_id, ai_result = entry_ids[0]
+                confirmation = f"✅ Saved! Entry ID: {entry_id}\n"
+                
+                if ai_result['intent'] == "instruction":
+                    confirmation += "🤖 Executed as instruction\n"
+                else:
+                    confirmation += "📝 Saved as note\n"
+                
+                if content_type == 'link':
+                    confirmation += f"🔗 Link detected\n"
+                
+                if ai_result['category']:
+                    confirmation += f"📁 Category: {ai_result['category']}\n"
+                
+                if ai_result['is_content_idea']:
+                    confirmation += "💡 Marked as content idea\n"
+                
+                if ai_result['processing_note']:
+                    confirmation += f"\n🧠 AI: {ai_result['processing_note'][:150]}"
+                
+                # Show preview of processed content
+                preview = ai_result['processed_content'][:200] + "..." if len(ai_result['processed_content']) > 200 else ai_result['processed_content']
+                confirmation += f"\n\n📋 Content:\n{preview}"
             else:
-                confirmation += "📝 Saved as note\n"
-            
-            if content_type == 'link':
-                confirmation += f"🔗 Link detected\n"
-            
-            if category_hint:
-                confirmation += f"📁 Category: {category_hint}\n"
-            
-            if is_content_idea:
-                confirmation += "💡 Marked as content idea\n"
-            
-            if processing_note:
-                confirmation += f"\n🧠 AI: {processing_note[:150]}"
-            
-            # Show preview of processed content
-            preview = processed_content[:200] + "..." if len(processed_content) > 200 else processed_content
-            confirmation += f"\n\n📋 Content:\n{preview}"
+                # Multi-item confirmation
+                confirmation = f"✅ Created {len(entry_ids)} entries from your message!\n\n"
+                for i, (entry_id, ai_result) in enumerate(entry_ids, 1):
+                    confirmation += f"**{i}. {ai_result['title'][:40]}**\n"
+                    confirmation += f"   📁 {ai_result['category']}"
+                    if ai_result['is_content_idea']:
+                        confirmation += " 💡"
+                    confirmation += f" (ID: {entry_id})\n\n"
             
             await update.message.reply_text(confirmation)
             
