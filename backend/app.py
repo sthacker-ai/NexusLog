@@ -6,6 +6,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 import os
+import re
 
 from models import get_session, Entry, Category, ContentIdea, Project, Config
 from ai_services import AIServiceManager
@@ -36,6 +37,24 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app)
+
+# Security: Patterns to redact from logs before displaying
+SENSITIVE_PATTERNS = [
+    (r'[0-9]{8,10}:[A-Za-z0-9_-]{35,}', '[TELEGRAM_TOKEN_REDACTED]'),  # Telegram bot tokens
+    (r'AIza[A-Za-z0-9_-]{35}', '[GOOGLE_API_KEY_REDACTED]'),  # Google API keys
+    (r'sk-[A-Za-z0-9]{48,}', '[OPENAI_KEY_REDACTED]'),  # OpenAI API keys
+    (r'r8_[A-Za-z0-9]{40,}', '[REPLICATE_KEY_REDACTED]'),  # Replicate API keys
+    (r'gsk_[A-Za-z0-9]{50,}', '[GROQ_KEY_REDACTED]'),  # Groq API keys
+    (r'postgresql://[^\s]+', '[DATABASE_URL_REDACTED]'),  # DB connection strings
+    (r'password[=:][^\s]+', '[PASSWORD_REDACTED]'),  # Passwords in logs
+]
+
+def sanitize_log_line(line: str) -> str:
+    """Remove sensitive information from a log line before display"""
+    result = line
+    for pattern, replacement in SENSITIVE_PATTERNS:
+        result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+    return result
 
 ai_manager = AIServiceManager()
 category_manager = CategoryManager()
@@ -193,8 +212,11 @@ def get_service_logs(service):
         # Check if there are more lines to load
         has_more = (offset + limit) < total
         
+        # Sanitize logs before returning to frontend
+        sanitized_logs = [sanitize_log_line(line) for line in paginated]
+        
         return jsonify({
-            'logs': paginated,
+            'logs': sanitized_logs,
             'total': total,
             'offset': offset,
             'limit': limit,
