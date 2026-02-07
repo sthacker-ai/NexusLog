@@ -13,9 +13,12 @@
 - **📊 Smart Categorization**: AI maintains max 10 categories with intelligent subcategories
 - **💡 Content Idea Management**: Track ideas for blogs, YouTube, LinkedIn, shorts, and reels
 - **📈 Google Sheets Sync**: Automatically sync content ideas to your spreadsheet
+- **📅 Timeline View**: Vertical timeline of daily activity with entry breakdowns
+- **📊 AI Usage Analytics**: Recharts-based dashboard tracking tokens, requests, and costs
+- **🔊 TTS Integration**: Qwen3-TTS via Replicate for audio generation
 - **🎨 Retro-Geeky UI**: Clean, minimalist interface with a nostalgic vibe
 - **📱 PWA Support**: Install as a mobile app
-- **🔒 Secure**: Environment-based secrets, no keys in code or git
+- **🔒 Secure**: Token redaction, local fonts only (no CDN), environment-based secrets
 
 ---
 
@@ -23,6 +26,8 @@
 
 ### Frontend
 - **React** + **Vite** + **Tailwind CSS**
+- **Recharts** for data visualization
+- **@fontsource** for local fonts (no CDN)
 - Retro-themed responsive design
 - Progressive Web App (PWA)
 
@@ -33,8 +38,8 @@
 
 ### AI Services (Configurable)
 - **Google Gemini** (Primary - Free tier)
+- **Replicate** (TTS with Qwen3, fallback transcription)
 - **Ollama** (Local processing)
-- **Replicate** (Fallback)
 - **OpenAI** (Optional)
 
 ### Integrations

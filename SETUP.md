@@ -357,6 +357,28 @@ curl -X POST "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=https:
 
 ---
 
+## 🔒 Security Best Practices
+
+NexusLog follows strict security guidelines:
+
+### Required
+- **All secrets in `.env`** - Never commit API keys or tokens
+- **Local fonts only** - No CDN dependencies (uses @fontsource)
+- **Token redaction** - Sensitive data hidden in log displays
+
+### Included by Default
+- `.env` is in `.gitignore`
+- React event handlers (CSP compliant, no inline handlers)
+- CORS configured for localhost in development
+
+### Frontend Dependencies
+```bash
+# Charts and fonts are installed locally
+npm install recharts @fontsource/jetbrains-mono @fontsource/press-start-2p
+```
+
+---
+
 ## 📚 Additional Resources
 
 - **Telegram Bot API**: https://core.telegram.org/bots/api
