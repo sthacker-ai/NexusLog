@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { getContentIdeas, getCategories } from '../utils/api';
+import { formatDateIST } from '../utils/dateUtils';
 
 function IdeaList() {
     const [ideas, setIdeas] = useState([]);
@@ -134,7 +135,7 @@ function IdeaList() {
                                 )}
 
                                 <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
-                                    <span>Created: {new Date(idea.created_at).toLocaleDateString()}</span>
+                                    <span>Created: {formatDateIST(idea.created_at)}</span>
                                     <span className="retro-badge bg-gray-100 text-gray-700">{idea.status}</span>
                                 </div>
                             </div>

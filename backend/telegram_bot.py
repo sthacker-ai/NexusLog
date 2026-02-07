@@ -19,13 +19,15 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Configure Logging
-# We use StreamHandler because start_app.bat redirects stdout/stderr to the log file.
+# Configure Logging - both console and file output
+os.makedirs('logs', exist_ok=True)
+log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format=log_format,
     handlers=[
-        logging.StreamHandler()
+        logging.StreamHandler(),  # Console output
+        logging.FileHandler('logs/bot.log', mode='a', encoding='utf-8')  # File output
     ]
 )
 logger = logging.getLogger(__name__)

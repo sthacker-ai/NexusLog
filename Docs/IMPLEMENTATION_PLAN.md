@@ -4,6 +4,7 @@
 
 NexusLog is a modular, intelligent note-taking system that captures ideas from multiple sources (Telegram messages, images, videos, audio, links), processes them with AI, categorizes them intelligently, and presents them in a clean, retro-geeky UI.
 
+This was created when i moved this from office PC to personal PC, so this was created so it can be used as handoff.
 ---
 
 ## User Review Required

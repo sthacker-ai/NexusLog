@@ -11,6 +11,7 @@ const api = axios.create({
 
 // Entries
 export const getEntries = (params = {}) => api.get('/entries', { params });
+export const getEntriesByDate = (params = {}) => api.get('/entries/by-date', { params });
 export const getEntry = (id) => api.get(`/entries/${id}`);
 export const createEntry = (data) => api.post('/entries', data);
 export const deleteEntry = (id) => api.delete(`/entries/${id}`);
@@ -36,5 +37,6 @@ export const updateConfig = (key, value) => api.put(`/config/${key}`, { value })
 
 // Stats
 export const getStats = () => api.get('/stats');
+export const getAnalytics = () => api.get('/analytics');
 
 export default api;

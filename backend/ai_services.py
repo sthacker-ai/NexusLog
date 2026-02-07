@@ -543,20 +543,20 @@ def log_usage(provider: str, model: str, feature: str, input_tokens: int, output
     """Log AI usage to database for cost tracking"""
     session = get_session()
     try:
-        # Cost estimation logic
+        # Cost estimation logic (estimated costs if on paid tier)
         rate_input = 0.0
         rate_output = 0.0
         
-        # Replicate Qwen TTS: ~$1.00 per 50k chars -> $0.00002 per char (input)
+        # Replicate Qwen3-TTS: $0.02 per 1,000 characters -> $0.00002 per char
         if provider == 'replicate' and feature == 'tts':
             rate_input = 0.00002 
         
-        # Gemini 1.5/2.0 Flash (Free tier usually, but generic pricing for reference)
-        # Input: $0.35 / 1M tokens ($0.00000035)
-        # Output: $1.05 / 1M tokens ($0.00000105)
+        # Gemini 2.5 Flash (2025 pricing - free tier has no actual cost)
+        # Input: $0.30 / 1M tokens ($0.0000003)
+        # Output: $2.50 / 1M tokens ($0.0000025)
         if provider == 'gemini':
-             rate_input = 0.00000035
-             rate_output = 0.00000105
+             rate_input = 0.0000003
+             rate_output = 0.0000025
 
         cost = (input_tokens * rate_input) + (output_tokens * rate_output)
         

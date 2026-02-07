@@ -1,7 +1,6 @@
 @echo off
 echo Starting NexusLog System...
 
-:: Start Backend API
 :: Run Diagnostics
 cmd /c "cd backend && venv\Scripts\activate && python check_system.py"
 
@@ -15,6 +14,6 @@ start "NexusLog Frontend" cmd /k "cd frontend && npm run dev"
 start "NexusLog Bot" cmd /k "cd backend && venv\Scripts\activate && python telegram_bot.py"
 
 echo All services launched in background! 
-echo Check logs in backend/logs/ folder.
+echo Logs are written to backend/logs/ folder.
 echo Frontend: http://localhost:3000
 pause
