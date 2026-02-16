@@ -62,6 +62,7 @@ class TelegramBot:
             self.sheets = None
             
         self.application = Application.builder().token(self.token).build()
+        self._is_initialized = False
         self._setup_handlers()
 
     # ... (Handlers setup remains same) ...
@@ -320,10 +321,10 @@ class TelegramBot:
 
     async def process_webhook_update(self, update_json):
         """Process an update received via webhook"""
-        # Ensure application is initialized
-        if not self.application.running:
+        if not self._is_initialized:
             await self.application.initialize()
             await self.application.start()
+            self._is_initialized = True
         
         update = Update.de_json(update_json, self.application.bot)
         await self.application.process_update(update)
