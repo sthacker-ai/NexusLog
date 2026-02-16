@@ -21,15 +21,20 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configure Logging - both console and file output
-os.makedirs('logs', exist_ok=True)
+# Configure Logging - both console and file output
+log_handlers = [logging.StreamHandler()]  # Console output always
+
+try:
+    os.makedirs('logs', exist_ok=True)
+    log_handlers.append(logging.FileHandler('logs/bot.log', mode='a', encoding='utf-8'))
+except OSError:
+    pass  # Read-only filesystem (Vercel)
+
 log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logging.basicConfig(
     level=logging.INFO,
     format=log_format,
-    handlers=[
-        logging.StreamHandler(),  # Console output
-        logging.FileHandler('logs/bot.log', mode='a', encoding='utf-8')  # File output
-    ]
+    handlers=log_handlers
 )
 logger = logging.getLogger(__name__)
 

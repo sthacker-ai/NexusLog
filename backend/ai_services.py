@@ -269,11 +269,14 @@ Do not summarize the full content. Just generate a title."""
                         print(f"[Gemini TTS] Got audio: {len(audio_data)} bytes, mime_type: {mime_type}")
                         
                         # Debug: Save to file for inspection
-                        debug_path = "uploads/debug_tts_output.audio"
-                        os.makedirs("uploads", exist_ok=True)
-                        with open(debug_path, 'wb') as f:
-                            f.write(audio_data)
-                        print(f"[Gemini TTS] Debug audio saved to: {debug_path}")
+                        try:
+                            debug_path = "uploads/debug_tts_output.audio"
+                            os.makedirs("uploads", exist_ok=True)
+                            with open(debug_path, 'wb') as f:
+                                f.write(audio_data)
+                            print(f"[Gemini TTS] Debug audio saved to: {debug_path}")
+                        except OSError:
+                             pass # Read-only FS on Vercel
                         
                         log_usage('gemini', self.TTS_MODEL, 'tts', input_tokens=len(text), output_tokens=0)
                         return audio_data
