@@ -9,6 +9,14 @@ DEFAULT_CATEGORIES = [
     {"name": "VibeCoding Projects", "description": "Coding and development projects"},
     {"name": "Stock Trading", "description": "Stock market notes and analysis"},
     {"name": "To-Do", "description": "Tasks and action items"},
+    {
+        "name": "To Learn",
+        "description": "Learning resources and educational content",
+        "subcategories": [
+            {"name": "Reading List", "description": "Articles, books, and reading material to learn from"},
+            {"name": "Videos", "description": "Video tutorials, courses, and educational videos"},
+        ]
+    },
 ]
 
 def init_tables():
@@ -39,9 +47,29 @@ def init_tables():
                             description=cat_data["description"]
                         )
                         session.add(category)
+                        session.flush()  # Flush to get the category ID for subcategories
                         print(f"✅ Created category: {cat_data['name']}")
                     else:
+                        category = existing
                         print(f"⏭️ Category already exists: {cat_data['name']}")
+                    
+                    # Seed subcategories if defined
+                    for sub_data in cat_data.get("subcategories", []):
+                        existing_sub = session.query(Category).filter(
+                            Category.name == sub_data["name"],
+                            Category.parent_id == category.id
+                        ).first()
+                        if not existing_sub:
+                            subcategory = Category(
+                                name=sub_data["name"],
+                                description=sub_data["description"],
+                                parent_id=category.id
+                            )
+                            session.add(subcategory)
+                            print(f"  ✅ Created subcategory: {sub_data['name']} (under {cat_data['name']})")
+                        else:
+                            print(f"  ⏭️ Subcategory already exists: {sub_data['name']}")
+                
                 session.commit()
             finally:
                 session.close()

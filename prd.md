@@ -30,23 +30,39 @@
 - **Log Pagination**: 50 lines default, "Load More" for history
 - **Token Redaction**: Sensitive tokens hidden from displayed logs
 - **Local Fonts**: No CDN dependencies per security guidelines
+- **YouTube Video Embeds**: Native iframe embeds (replaced ReactPlayer), 480px max-width, works in both collapsed and expanded views
+- **X/Twitter Link Handling**: Graceful fallback for X.com links (filters JS-unavailable messages)
+- **Async Telegram Handlers**: All blocking I/O wrapped in `asyncio.run_in_executor()` to prevent timeouts
+- **Markdown Typography**: `@tailwindcss/typography` plugin for proper prose styling (lists, headings, spacing)
+- **Link Behavior**: All links open in new tabs, raw URLs hidden from collapsed view, "Open Link" label
+- **Bold Entry Titles**: Titles displayed as bold `<h3>` above metadata badges
+- **"To Learn" Category**: New category with subcategories "Reading List" and "Videos"
+- **Markdown Links**: `remark-gfm` for auto-linking URLs + custom `MarkdownLink` component
 
 ---
 
 ## Roadmap (Planned)
 
 ### Near-Term
-- [ ] **Multi-Input AI Parsing**: Single voice note → multiple entries
-- [ ] **Google Sheets Cell Update**: Voice note updates specific cell by identifiers
-- [ ] **Multiple AI APIs**: Groq + Ollama fallback system
+- [ ] **Simplified AI Processing**:
+    - **Text/Voice**: Grammar/spelling fix ONLY (no summarization).
+    - **Media**: Save as-is with basic metadata (title).
+    - ~~**Display**: Embed images/videos for direct playback/viewing.~~ ✅ Done
+- [ ] **Google Sheets Integration (Trading Journal)**:
+    - Trigger: "Trading Journal" keyword.
+    - Logic: Match Date + Stock Symbol.
+    - Action: Update specific columns (Commentary, Lessons).
+- [ ] **Multi-Input AI Parsing**: Single voice note → multiple entries (Refined logic)
 
 ### Medium-Term
-- [ ] **Notes Section**: OneNote-like hierarchical notes (3 layers)
+- [ ] **Model Stacking**: Priority-based multi-model support (Deferred).
+- [ ] **Notes Section**: OneNote-like hierarchical notes (3 layers).
 - [ ] **Hostinger Deployment**: thinkbits.in/nexuslog
 - [ ] **Image + Voice Combo**: Smart multimodal input processing
 
 ### Deferred
 - [ ] **Chart Legend Fix**: Free limit label in Recharts
+- [ ] **Article Image Extraction**: OCR images embedded within web articles/blogs
 
 ---
 
@@ -87,4 +103,4 @@
 
 ---
 
-*Last updated: 2026-02-07*
+*Last updated: 2026-02-16*

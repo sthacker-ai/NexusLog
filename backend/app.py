@@ -738,6 +738,13 @@ def telegram_webhook():
     return jsonify({'status': 'webhook received'})
 
 
+@app.route('/api/uploads/<path:filename>')
+def serve_uploads(filename):
+    """Serve uploaded files"""
+    from flask import send_from_directory
+    return send_from_directory('static/uploads', filename)
+
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=True)

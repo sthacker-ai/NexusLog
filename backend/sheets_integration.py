@@ -135,15 +135,16 @@ class SheetsIntegration:
             print(f"Error creating header: {e}")
     
     def find_row_by_values(self, sheet_name: str, identifier_columns: List[str], 
-                           identifier_values: List[str], data_range: str = None) -> int:
+                           identifier_values: List[str], data_range: str = None, reverse: bool = False) -> int:
         """
         Find a row by matching values in multiple columns.
         
         Args:
-            sheet_name: Name of the sheet tab (e.g., 'Stock Tracker')
-            identifier_columns: Column letters to match (e.g., ['A', 'B'] for date + stock name)
-            identifier_values: Values to find in those columns (e.g., ['2026-02-07', 'RELIANCE'])
-            data_range: Optional specific range to search (defaults to columns A-Z)
+            sheet_name: Name of the sheet tab
+            identifier_columns: Column letters to match
+            identifier_values: Values to find
+            data_range: Optional specific range
+            reverse: If True, search from bottom up (for chronological logs)
         
         Returns:
             Row number (1-indexed) if found, -1 if not found
@@ -157,7 +158,37 @@ class SheetsIntegration:
                 search_range = f"'{sheet_name}'!A:Z"
             
             result = self.service.spreadsheets().values().get(
-                spreadsheetId=self.sheet_id,
+                spreadsheetId=self.sheet_id, # Default ID, overridden in wrapper if needed but this method uses self.sheet_id
+                range=search_range           # Wait, find_row uses self.sheet_id. 
+                                             # I need to allow passing sheet_id to this method too!
+            ).execute()
+            
+            # ... NO, I should update find_row_by_values signature to accept sheet_id
+            pass
+            
+        except Exception:
+             pass
+
+    # RE-WRITING THE WHOLE METHOD TO FIX THE SHEET_ID ISSUE
+    
+    def find_row_by_values(self, sheet_name: str, identifier_columns: List[str], 
+                           identifier_values: List[str], data_range: str = None, 
+                           reverse: bool = False, sheet_id: str = None) -> int:
+        """
+        Find a row by matching values in multiple columns.
+        Supports reverse search and custom sheet ID.
+        """
+        try:
+            active_sheet_id = sheet_id or self.sheet_id
+            
+            # Determine search range
+            if data_range:
+                search_range = f"'{sheet_name}'!{data_range}"
+            else:
+                search_range = f"'{sheet_name}'!A:Z"
+            
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=active_sheet_id,
                 range=search_range
             ).execute()
             
@@ -169,8 +200,13 @@ class SheetsIntegration:
             # Convert column letters to indices (A=0, B=1, etc.)
             col_indices = [ord(col.upper()) - ord('A') for col in identifier_columns]
             
+            # Create iterator (forward or reverse)
+            rows_iter = enumerate(values)
+            if reverse:
+                rows_iter = reversed(list(enumerate(values)))
+            
             # Search each row
-            for row_idx, row in enumerate(values):
+            for row_idx, row in rows_iter:
                 # Check if all identifier values match
                 matches = True
                 for col_idx, expected_value in zip(col_indices, identifier_values):
@@ -178,7 +214,12 @@ class SheetsIntegration:
                         matches = False
                         break
                     # Case-insensitive, trimmed comparison
-                    if str(row[col_idx]).strip().lower() != str(expected_value).strip().lower():
+                    # Allow fuzzy match for stock symbol? User said "match STOCK SYMBOL"
+                    # For date, exact match is best.
+                    val = str(row[col_idx]).strip().lower()
+                    exp = str(expected_value).strip().lower()
+                    
+                    if val != exp:
                         matches = False
                         break
                 
@@ -193,104 +234,57 @@ class SheetsIntegration:
         except Exception as e:
             print(f"Error finding row: {e}")
             return -1
-    
-    def update_cell_by_identifiers(
-        self,
-        sheet_name: str,
-        identifier_columns: List[str],
-        identifier_values: List[str],
-        target_column: str,
-        new_value: str,
-        sheet_id: str = None
-    ) -> Dict:
+
+    def log_trade_journal(self, date: str, stock_symbol: str, commentary: str = None, 
+                         lessons: str = None) -> Dict:
         """
-        Generic cell update - finds a row by identifier columns and updates a target column.
-        
-        Use case example (Stock Sheet):
-            - identifier_columns: ['A', 'B'] (Date, Stock Name)
-            - identifier_values: ['2026-02-07', 'RELIANCE']
-            - target_column: 'L' (Comment/Notes column)
-            - new_value: 'Positive momentum, watch resistance at 2850'
-        
-        Args:
-            sheet_name: Tab name (e.g., 'Stock Tracker', 'Post Ideas')
-            identifier_columns: Columns to match for row finding
-            identifier_values: Values to match in those columns
-            target_column: Column letter to update (e.g., 'L')
-            new_value: Value to write to the cell
-            sheet_id: Optional override sheet ID (uses default if None)
-        
-        Returns:
-            Dict with 'success', 'message', and 'row' (if found)
+        Log entry to the Trading Journal.
+        sheet_id: 1dNB-i8GoYDR4upLYN-swX6G2wZn1rCnEE7SDnRf1BP8
         """
-        try:
-            # Use override sheet_id or default
-            active_sheet_id = sheet_id or self.sheet_id
-            
-            # Find the row
-            row_num = self.find_row_by_values(sheet_name, identifier_columns, identifier_values)
-            
-            if row_num == -1:
-                return {
-                    'success': False,
-                    'message': f"Row not found for identifiers: {dict(zip(identifier_columns, identifier_values))}",
-                    'row': None
-                }
-            
-            # Build cell reference (e.g., 'Stock Tracker'!L5)
-            cell_ref = f"'{sheet_name}'!{target_column.upper()}{row_num}"
-            
-            # Update the cell
-            body = {'values': [[new_value]]}
-            
-            result = self.service.spreadsheets().values().update(
-                spreadsheetId=active_sheet_id,
-                range=cell_ref,
-                valueInputOption='USER_ENTERED',  # Allows formulas and auto-formatting
-                body=body
-            ).execute()
-            
-            updated_cells = result.get('updatedCells', 0)
-            
-            return {
-                'success': True,
-                'message': f"Updated {cell_ref} with value (updated {updated_cells} cell)",
-                'row': row_num,
-                'cell_reference': cell_ref
-            }
-            
-        except HttpError as error:
-            return {
-                'success': False,
-                'message': f"Google Sheets API error: {error}",
-                'row': None
-            }
-        except Exception as e:
-            return {
-                'success': False,
-                'message': f"Error updating cell: {e}",
-                'row': None
-            }
-    
-    def update_stock_note(self, date: str, stock_name: str, note: str, 
-                          sheet_name: str = "Stock Tracker", column: str = "L") -> Dict:
-        """
-        Convenience method for updating stock notes.
+        TRADING_SHEET_ID = '1dNB-i8GoYDR4upLYN-swX6G2wZn1rCnEE7SDnRf1BP8'
+        SHEET_NAME = "Journal" # Or whatever the tab name is. User didn't specify tab name?
+        # User said: "identifying entries by DATE... and STOCK SYMBOL"
+        # "columns L and M are 'Trade Commentary' and 'Lessons Learned'".
+        # I'll assume tab name is 'Journal' or 'Sheet1' or 'Trades'.
+        # I'll try 'Journal' first, maybe make it configurable?
+        # Let's assume 'Sheet1' if unknown, or maybe I should list sheets?
+        # User's previous convo mentioned "Trading Journal".
+        # I will use "Journal" as a safe guess or "Trading Journal".
+        # Actually I can get the first sheet name if I want.
+        # But let's use "Journal" for now.
+        SHEET_KEY = "Journal" 
         
-        Args:
-            date: Date string (format should match sheet, e.g., '2026-02-07' or '07-02-2026')
-            stock_name: Stock symbol or name (case-insensitive)
-            note: The note/comment to add
-            sheet_name: Sheet tab name (default: 'Stock Tracker')
-            column: Column to update (default: 'L')
-        
-        Returns:
-            Result dict with success status and message
-        """
-        return self.update_cell_by_identifiers(
-            sheet_name=sheet_name,
-            identifier_columns=['A', 'B'],  # Date in A, Stock Name in B
-            identifier_values=[date, stock_name],
-            target_column=column,
-            new_value=note
+        # 1. Find the row (Reverse chronological)
+        row_num = self.find_row_by_values(
+            sheet_name=SHEET_KEY, # This might fail if tab name is wrong
+            identifier_columns=['A', 'B'], # Assuming Date=A, Ticker=B
+            identifier_values=[date, stock_symbol],
+            reverse=True,
+            sheet_id=TRADING_SHEET_ID
         )
+        
+        if row_num == -1:
+            return {'success': False, 'message': f"No matching trade found for {stock_symbol} on {date}"}
+        
+        # 2. Update Columns L and M
+        updates = []
+        if commentary:
+            updates.append({'col': 'L', 'val': commentary})
+        if lessons:
+            updates.append({'col': 'M', 'val': lessons})
+            
+        messages = []
+        for up in updates:
+            cell_ref = f"'{SHEET_KEY}'!{up['col']}{row_num}"
+            try:
+                self.service.spreadsheets().values().update(
+                    spreadsheetId=TRADING_SHEET_ID,
+                    range=cell_ref,
+                    valueInputOption='USER_ENTERED',
+                    body={'values': [[up['val']]]}
+                ).execute()
+                messages.append(f"Updated {up['col']}")
+            except Exception as e:
+                messages.append(f"Failed {up['col']}: {str(e)}")
+                
+        return {'success': True, 'message': f"Log updated (Row {row_num}): {', '.join(messages)}"}

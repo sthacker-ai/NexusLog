@@ -280,40 +280,15 @@ When the same nav item is clicked, we increment a `refreshKey` that's passed as 
 
 Here's what's on the roadmap:
 
-### 1. Logs Pagination
-- Show last 50 log lines by default
-- "Load More" button for historical logs
-- Descending order (latest first)
+### ✅ Completed
+- **Logs Pagination** - Last 50 log lines default, "Load More" button, descending order
+- **IST Timestamps** - All timestamps displayed in Indian Standard Time (UTC+5:30)
+- **Timeline Page** - Vertical timeline showing daily activity and entry summaries
+- **Usage Analytics** - Token tracking, requests per model, daily breakdown charts (Recharts)
+- **Clickable Dashboard Tiles** - Each stat tile navigates to filtered entries list
 
-### 2. Multi-Input AI Parsing
-One voice note → Multiple database entries!
-
-```
-"Hey, add 'review pull requests' to my to-do list, 
-note 'API design patterns' as a content idea, 
-and under NexusLog project add 'implement dark mode'"
-```
-
-The AI will extract 3 separate items and create 3 entries.
-
-### 3. IST Timestamps
-All timestamps displayed in Indian Standard Time (UTC+5:30).
-
-### 4. Timeline Page
-A vertical timeline showing daily activity - scroll through past days and see summaries of all entries.
-
-### 5. Usage Analytics
-Track API usage:
-- Input/output tokens
-- Requests per model
-- Cost tracking (for Replicate)
-- Daily breakdown charts
-
-### 6. Clickable Dashboard Tiles
-Each stat tile becomes a navigation link:
-- "Total Entries" → Full entries list
-- "Audio" → Filtered audio entries
-- And so on...
+### 🔲 Remaining
+- **Multi-Input AI Parsing** - One voice note → multiple database entries
 
 ---
 

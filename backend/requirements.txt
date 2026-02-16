@@ -30,3 +30,6 @@ Pillow==10.1.0
 # Utilities
 python-magic==0.4.27
 validators==0.22.0
+yt-dlp>=2023.11.16
+trafilatura>=1.6.3
+youtube-transcript-api>=0.6.1

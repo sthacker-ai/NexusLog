@@ -70,10 +70,16 @@ class GeminiProvider(AIServiceProvider):
     
     def _init_model(self, model_name: str = None):
         """Initialize a specific model or the current one from the list"""
+        # Set high output token limit to prevent truncation
+        generation_config = {
+            "max_output_tokens": 8192,
+            "temperature": 0.2,
+        }
+        
         if model_name:
-            self.model = genai.GenerativeModel(model_name)
+            self.model = genai.GenerativeModel(model_name, generation_config=generation_config)
         else:
-            self.model = genai.GenerativeModel(self.GENERAL_MODELS[self.current_model_index])
+            self.model = genai.GenerativeModel(self.GENERAL_MODELS[self.current_model_index], generation_config=generation_config)
         print(f"[Gemini] Using model: {self.model.model_name}")
     
     def _call_with_fallback(self, func, *args, **kwargs):
@@ -166,6 +172,77 @@ class GeminiProvider(AIServiceProvider):
             return text
         except Exception as e:
             print(f"Gemini OCR error: {e}")
+            return ""
+    
+    def analyze_image_vision(self, image_path: str, user_prompt: str = None) -> str:
+        """
+        Comprehensive image analysis using Gemini Vision.
+        Can describe, OCR, or answer specific questions about the image.
+        """
+        image_file_obj = genai.upload_file(image_path)
+        
+        if user_prompt:
+            prompt = f"""Analyze this image and respond to the user's request.
+User's request: {user_prompt}
+INSTRUCTIONS:
+1. If user asks for "title" or "caption", provide a short 5-10 word description.
+2. If user explicitly asks for "full details" or "OCR", provide it (but default is minimal)."""
+        else:
+            prompt = """Analyze this image and provide ONLY a short, descriptive title (5-10 words). 
+Do not extract full text. Do not describe every detail. Just a title."""
+        
+        def _do_analyze():
+            response = self.model.generate_content([prompt, image_file_obj])
+            text = response.text.strip()
+            # Debug log to see if model is truncating
+            print(f"[Gemini Vision] Generated {len(text)} chars from image. Prompt: {user_prompt or 'default'}")
+            
+            log_usage('gemini', self.model.model_name, 'analyze_image_vision',
+                      input_tokens=response.usage_metadata.prompt_token_count if response.usage_metadata else 0,
+                      output_tokens=response.usage_metadata.candidates_token_count if response.usage_metadata else 0)
+            return text
+        
+        try:
+            return self._call_with_fallback(_do_analyze)
+        except Exception as e:
+            print(f"Gemini image analysis error (all models failed): {e}")
+            return ""
+    
+    def analyze_video_full(self, video_path_or_url: str, user_prompt: str = None) -> str:
+        """
+        Full video analysis using Gemini's native video understanding.
+        Analyzes video quality, b-roll, visual effects, editing, etc.
+        """
+        import re
+        
+        # Check if it's a URL or local file
+        if video_path_or_url.startswith('http'):
+            youtube_pattern = r'(youtube\.com|youtu\.be)'
+            if re.search(youtube_pattern, video_path_or_url):
+                video_content = video_path_or_url
+            else:
+                return "Full video analysis currently supports YouTube URLs and local files only"
+        else:
+            video_content = genai.upload_file(video_path_or_url)
+        
+        if user_prompt:
+            prompt = f"""Analyze this video based on the user's request: {user_prompt}"""
+        else:
+            prompt = """Analyze this video and provide ONLY a short, descriptive title (5-10 words).
+Do not summarize the full content. Just generate a title."""
+        
+        def _do_analyze():
+            response = self.model.generate_content([prompt, video_content])
+            text = response.text.strip()
+            log_usage('gemini', self.model.model_name, 'analyze_video_full',
+                      input_tokens=response.usage_metadata.prompt_token_count if response.usage_metadata else 0,
+                      output_tokens=response.usage_metadata.candidates_token_count if response.usage_metadata else 0)
+            return text
+        
+        try:
+            return self._call_with_fallback(_do_analyze)
+        except Exception as e:
+            print(f"Gemini video analysis error (all models failed): {e}")
             return ""
     
     def text_to_speech(self, text: str, voice: str = "en-GB-male") -> bytes:
@@ -687,7 +764,7 @@ class AIServiceManager:
             if provider_name in self.providers:
                 try:
                     provider = self.providers[provider_name]
-                    if hasattr(provider, 'model'):
+                    if provider_name == 'gemini' and hasattr(provider, 'model'):
                         # Direct Gemini call
                         response = provider.model.generate_content(prompt)
                         result = response.text.strip()
@@ -698,12 +775,32 @@ class AIServiceManager:
                                       input_tokens=response.usage_metadata.prompt_token_count if response.usage_metadata else 0,
                                       output_tokens=response.usage_metadata.candidates_token_count if response.usage_metadata else 0)
                             return result
-                    elif hasattr(provider, '_generate'):
+                    elif provider_name == 'ollama':
                         # Ollama call
-                        result = provider._generate(prompt)
+                        result = provider.generate_content(prompt) if hasattr(provider, 'generate_content') else provider._generate(prompt)
                         if result:
                             return result
+                    elif provider_name == 'replicate':
+                         # Replicate call logic if needed
+                         pass
                 except Exception as e:
                     print(f"AI process_message error with {provider_name}: {e}")
                     continue
+        return ""
+
+    def analyze_image_vision(self, image_path: str, user_prompt: str = None) -> str:
+        """Analyze image with vision AI - centralized with fallback"""
+        if 'gemini' in self.providers:
+            result = self.providers['gemini'].analyze_image_vision(image_path, user_prompt)
+            if result:
+                return result
+        # Fallback to basic OCR if vision analysis fails
+        return self.ocr_image(image_path)
+    
+    def analyze_video_full(self, video_path_or_url: str, user_prompt: str = None) -> str:
+        """Full video analysis with fallback"""
+        if 'gemini' in self.providers:
+            result = self.providers['gemini'].analyze_video_full(video_path_or_url, user_prompt)
+            if result:
+                return result
         return ""

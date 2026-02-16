@@ -16,6 +16,11 @@
 - **📅 Timeline View**: Vertical timeline of daily activity with entry breakdowns
 - **📊 AI Usage Analytics**: Recharts-based dashboard tracking tokens, requests, and costs
 - **🔊 TTS Integration**: Qwen3-TTS via Replicate for audio generation
+- **🎬 YouTube Video Embeds**: Native iframe embeds with 480px max-width in both collapsed and expanded views
+- **📝 Markdown Typography**: `@tailwindcss/typography` for beautiful prose rendering (lists, headings, spacing)
+- **🔗 Smart Link Handling**: Links open in new tabs, raw URLs hidden from collapsed view, X/Twitter graceful fallback
+- **📚 "To Learn" Category**: Built-in category with "Reading List" and "Videos" subcategories
+- **⚡ Async Telegram Handlers**: Non-blocking I/O prevents timeout errors
 - **🎨 Retro-Geeky UI**: Clean, minimalist interface with a nostalgic vibe
 - **📱 PWA Support**: Install as a mobile app
 - **🔒 Secure**: Token redaction, local fonts only (no CDN), environment-based secrets
@@ -25,7 +30,7 @@
 ## 🛠️ Tech Stack
 
 ### Frontend
-- **React** + **Vite** + **Tailwind CSS**
+- **React** + **Vite** + **Tailwind CSS** + **@tailwindcss/typography**
 - **Recharts** for data visualization
 - **@fontsource** for local fonts (no CDN)
 - Retro-themed responsive design
@@ -147,7 +152,7 @@ See [SETUP.md](SETUP.md) for detailed step-by-step instructions.
 ## 📁 Project Structure
 
 ```
-nebular-ride/
+NexusLog/
 ├── backend/
 │   ├── app.py                 # Flask API
 │   ├── models.py              # Database models

@@ -7,13 +7,15 @@ import re
 import time
 import json
 import logging
+import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from models import Entry, ContentIdea, get_session
+from models import Entry, ContentIdea, Category, get_session
 from ai_services import AIServiceManager
 from category_manager import CategoryManager
 from sheets_integration import SheetsIntegration
-from typing import Dict, List, Optional
+from content_extractor import get_content_extractor
+from typing import Dict, List, Optional, Any
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -63,6 +65,9 @@ class TelegramBot:
             print(f"Google Sheets not configured: {e}")
             self.sheets = None
         
+        # Initialize content extractor for URL/image/video processing
+        self.content_extractor = get_content_extractor()
+        
         self.app = Application.builder().token(self.token).build()
         self._setup_handlers()
     
@@ -74,6 +79,7 @@ class TelegramBot:
         # Message handlers
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text))
         self.app.add_handler(MessageHandler(filters.PHOTO, self.handle_image))
+        self.app.add_handler(MessageHandler(filters.ANIMATION, self.handle_animation))
         self.app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, self.handle_audio))
         self.app.add_handler(MessageHandler(filters.VIDEO, self.handle_video))
     
@@ -174,7 +180,7 @@ Determine:
 
 2. For EACH item determine:
    - INTENT: "note" (info to save) or "instruction" (action to perform)
-   - Category: "Content Ideas", "VibeCoding Projects", "Stock Trading", "To-Do", or "General Notes"
+   - Category: "Content Ideas", "VibeCoding Projects", "Stock Trading", "To-Do", "To Learn" (subcategories: "Reading List", "Videos"), or "General Notes"
    - Is it a content idea for blog/youtube/social?
    - A SHORT TITLE (max 50 chars)
    - Cleaned/corrected content
@@ -259,56 +265,244 @@ If single item, return array with 1 element. If multiple items, return array wit
                 'intent': 'note'
             }]
     
+    def _unified_ai_process(self, extracted_content: Dict[str, Any]) -> list:
+        """
+        Unified AI processing for ANY input combination.
+        Takes extracted content from ContentExtractor and determines:
+        - User's intent (save, summarize, analyze, etc.)
+        - How many entries to create
+        - Category and content for each entry
+        
+        Args:
+            extracted_content: Dict from ContentExtractor.extract_all_content()
+        
+        Returns: List of dicts with processed entries
+        """
+        try:
+            # Build context from all extracted content
+            context_parts = []
+            
+            # User's direct text/caption
+            if extracted_content.get('text'):
+                context_parts.append(f"USER MESSAGE: {extracted_content['text']}")
+            
+            # Voice transcription
+            if extracted_content.get('transcription'):
+                context_parts.append(f"VOICE NOTE (transcribed): {extracted_content['transcription']}")
+            
+            # YouTube content with timestamps
+            for yt in extracted_content.get('youtube_content', []):
+                timestamps_info = ""
+                if yt.get('timestamps'):
+                    top_timestamps = yt['timestamps'][:10]  # First 10 timestamps for reference
+                    timestamps_info = "\n- Key timestamps: " + ", ".join(
+                        [f"[{t['time']}] {t['text'][:30]}..." for t in top_timestamps]
+                    )
+                context_parts.append(f"""YOUTUBE VIDEO:
+- Title: {yt.get('title', 'Unknown')}
+- Channel: {yt.get('channel', 'Unknown')}
+- Duration: {yt.get('duration_seconds', 0) // 60} minutes
+- URL: {yt.get('url', '')}""")
+            
+            # Non-YouTube video platform content (Vimeo, Twitter, etc.)
+            for vid in extracted_content.get('video_platform_content', []):
+                context_parts.append(f"""VIDEO ({vid.get('platform', 'Unknown')}):
+- Title: {vid.get('title', 'Unknown')}
+- Duration: {vid.get('duration_seconds', 0) // 60} minutes
+- URL: {vid.get('url', '')}""")
+            
+            # Generic URL content
+            for url_data in extracted_content.get('url_content', []):
+                context_parts.append(f"""WEB PAGE:
+- URL: {url_data.get('url', '')}
+- Title: {url_data.get('title', 'Unknown')}""")
+            
+            # Image analysis (from file upload)
+            if extracted_content.get('image_analysis'):
+                # For direct images, we just want a title/caption, not full OCR
+                # But we pass the analysis in case it helps generate a Title
+                context_parts.append(f"IMAGE: {extracted_content['image_analysis']}")
+            
+            # Image URL analyses (from image URLs in text)
+            for img_analysis in extracted_content.get('image_url_analyses', []):
+                context_parts.append(f"IMAGE FROM URL ANALYSIS: {img_analysis.get('analysis', '')}")
+            
+            # Reply context
+            if extracted_content.get('reply_context'):
+                ctx = extracted_content['reply_context']
+                context_parts.append(f"REPLYING TO MESSAGE: {ctx.get('text', '[media content]')}")
+            
+            # Combine all context
+            full_context = "\n\n".join(context_parts)
+            
+            if not full_context.strip():
+                return [{
+                    'processed_content': 'No content to process',
+                    'category': 'General Notes',
+                    'is_content_idea': False,
+                    'title': 'Empty Input',
+                    'processing_note': 'No content extracted',
+                    'intent': 'note'
+                }]
+            
+            # Enhanced AI prompt for Smart Logger
+            ai_prompt = f"""You are NexusLog Smart Logger. Analyze the input and respond in JSON.
+
+INPUT CONTENT:
+{full_context}
+
+INSTRUCTIONS:
+1. **NO SUMMARIZATION**: Do not summarize articles, videos, or external content.
+2. **Text/Voice Notes**: Correct grammar, spelling, and formatting ONLY. Retain the original message length, tone, and details.
+3. **Media/Links**: detailed log entry with the Title and Metadata. Do not hallucinate content you don't see.
+4. **Trading Journal**: If the input mentions "Trading Journal", "Trade", "Stock", or specific stock symbols with dates, identify as "Stock Trading".
+
+CATEGORIES: "Content Ideas", "VibeCoding Projects", "Stock Trading", "To-Do", "To Learn" (subcategories: "Reading List", "Videos"), "General Notes"
+
+Respond ONLY with valid JSON:
+{{
+  "items": [
+    {{
+      "intent": "note" | "trade_journal",
+      "date": "M/D/YYYY",
+      "stock_symbol": "SYMBOL",
+      "title": "<Short descriptive title>",
+      "processed_content": "<The corrected text OR metadata description>",
+      "category": "<category>",
+      "subcategory": "<subcategory (optional)>",
+      "is_content_idea": true/false
+    }}
+  ]
+}}"""
+
+            ai_response = self.ai_manager.process_message(ai_prompt)
+            
+            # Default item
+            default_item = {
+                'processed_content': full_context[:500],
+                'category': 'General Notes',
+                'is_content_idea': False,
+                'title': 'Untitled Entry',
+                'processing_note': '',
+                'intent': 'note'
+            }
+            
+            if ai_response:
+                try:
+                    # Parse JSON from response
+                    json_str = ai_response
+                    if '```json' in json_str:
+                        json_str = json_str.split('```json')[1].split('```')[0]
+                    elif '```' in json_str:
+                        json_str = json_str.split('```')[1].split('```')[0]
+                    
+                    ai_result = json.loads(json_str.strip())
+                    
+                    if 'items' in ai_result and isinstance(ai_result['items'], list):
+                        items = []
+                        for item in ai_result['items']:
+                            items.append({
+                                'processed_content': item.get('processed_content', default_item['processed_content']),
+                                'category': item.get('category', 'General Notes'),
+                                'is_content_idea': item.get('is_content_idea', False),
+                                'title': item.get('title', default_item['title']),
+                                'processing_note': item.get('processing_note', ''),
+                                'intent': item.get('intent', 'note')
+                            })
+                        return items if items else [default_item]
+                    
+                    # Single item format
+                    return [{
+                        'processed_content': ai_result.get('processed_content', default_item['processed_content']),
+                        'category': ai_result.get('category', 'General Notes'),
+                        'is_content_idea': ai_result.get('is_content_idea', False),
+                        'title': ai_result.get('title', default_item['title']),
+                        'processing_note': ai_result.get('processing_note', ''),
+                        'intent': ai_result.get('intent', 'note')
+                    }]
+                    
+                except json.JSONDecodeError:
+                    logger.warning("Failed to parse unified AI JSON response")
+                    default_item['processed_content'] = ai_response[:1000]
+            
+            return [default_item]
+            
+        except Exception as e:
+            logger.error(f"Unified AI processing error: {e}")
+            return [{
+                'processed_content': str(extracted_content)[:500],
+                'category': 'General Notes',
+                'is_content_idea': False,
+                'title': 'Processing Error',
+                'processing_note': f'Error: {str(e)[:100]}',
+                'intent': 'note'
+            }]
+    
     async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
-        AI-First text message handler with multi-item support.
-        ALL messages go through AI for:
-        1. Intent detection (note vs instruction)
-        2. Multi-item parsing (single message -> multiple entries)
-        3. Spell/grammar correction for notes
-        4. URL detection and processing
+        Unified text message handler.
+        Extracts content from URLs (YouTube, web pages) and processes with AI.
         """
         text = update.message.text
-        
-        # URL detection regex
-        url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
-        urls = re.findall(url_pattern, text)
-        
-        # Determine content type based on URL presence
-        content_type = 'link' if urls else 'text'
+        reply_to = update.message.reply_to_message
         
         # Send processing indicator
         await update.message.reply_text("🧠 Processing with AI...")
         
         try:
-            # Use shared AI processing method - now returns LIST
-            ai_items = self._ai_process_text(text)
+            # Extract all content (URLs, YouTube, web pages)
+            loop = asyncio.get_running_loop()
+            extracted = await loop.run_in_executor(
+                None, 
+                lambda: self.content_extractor.extract_all_content(
+                    text=text,
+                    reply_to_message=reply_to
+                )
+            )
             
-            # Parse metadata for output types (shared across all items)
+            # Show extraction notes if any
+            if extracted.get('extraction_notes'):
+                notes = "\n".join(f"• {n}" for n in extracted['extraction_notes'][:3])
+                await update.message.reply_text(f"📥 Extracted:\n{notes}")
+            
+            # Process with unified AI
+            ai_items = await loop.run_in_executor(
+                None,
+                lambda: self._unified_ai_process(extracted)
+            )
+            
+            # Parse metadata for output types
             metadata = self._parse_input_metadata(text)
+            
+            # Determine content type and extract source URL
+            has_youtube = len(extracted.get('youtube_content', [])) > 0
+            has_urls = len(extracted.get('url_content', [])) > 0
+            content_type = 'youtube' if has_youtube else ('link' if has_urls else 'text')
+            
+            # Extract the original source URL for reliable frontend rendering
+            source_url = None
+            if has_youtube:
+                source_url = extracted['youtube_content'][0].get('url', '')
+            elif has_urls:
+                source_url = extracted['url_content'][0].get('url', '')
+            elif extracted.get('urls', {}).get('youtube'):
+                source_url = extracted['urls']['youtube'][0]
+            elif extracted.get('urls', {}).get('generic'):
+                source_url = extracted['urls']['generic'][0]
             
             entry_ids = []
             
-            # Process each item
+            # Process each AI item
             for ai_result in ai_items:
-                processed_content = ai_result['processed_content']
-                category_hint = ai_result['category']
-                is_content_idea = ai_result['is_content_idea']
-                title = ai_result['title']
-                
-                # If URL present, prepend it to the first content only
-                if urls and len(entry_ids) == 0:
-                    if not any(url in processed_content for url in urls):
-                        processed_content = f"Link: {urls[0]}\n\n{processed_content}"
-                
-                # Store entry
                 entry_id = await self._process_and_store(
-                    content=processed_content,
+                    content=ai_result['processed_content'],
                     content_type=content_type if len(entry_ids) == 0 else 'text',
-                    is_content_idea=metadata['is_content_idea'] or is_content_idea,
+                    is_content_idea=metadata['is_content_idea'] or ai_result['is_content_idea'],
                     output_types=metadata['output_types'],
-                    category_hint=category_hint,
-                    title=title
+                    category_hint=ai_result['category'],
+                    subcategory_hint=ai_result.get('subcategory'),
+                    title=ai_result['title'],
+                    source_url=source_url
                 )
                 entry_ids.append((entry_id, ai_result))
             
@@ -317,14 +511,47 @@ If single item, return array with 1 element. If multiple items, return array wit
                 entry_id, ai_result = entry_ids[0]
                 confirmation = f"✅ Saved! Entry ID: {entry_id}\n"
                 
-                if ai_result['intent'] == "instruction":
-                    confirmation += "🤖 Executed as instruction\n"
+                if ai_result['intent'] == "summary":
+                    confirmation += "📝 Summary created\n"
+                elif ai_result['intent'] == "analysis":
+                    confirmation += "🔍 Analysis complete\n"
                 else:
                     confirmation += "📝 Saved as note\n"
                 
-                if content_type == 'link':
-                    confirmation += f"🔗 Link detected\n"
+                if content_type == 'youtube':
+                    confirmation += "🎬 YouTube content processed\n"
+                elif content_type == 'link':
+                    confirmation += "🔗 Link content extracted\n"
                 
+                # Handle Trading Journal
+                if ai_result.get('intent') == 'trade_journal':
+                    date = ai_result.get('date')
+                    stock = ai_result.get('stock_symbol')
+                    if date and stock:
+                        # Call Sheets Agent
+                        # Assuming 'sheets' is available via app structure or we import it
+                        # telegram_bot.py usually doesn't import app.py to avoid circular deps.
+                        # But app.py imports telegram_bot potentially? No, app runs bot.
+                        # We need to import SheetsIntegration here or pass it.
+                        # Let's import singleton if possible or create new.
+                        from sheets_integration import SheetsIntegration
+                        try:
+                            sheets = SheetsIntegration()
+                            sheet_result = sheets.log_trade_journal(
+                                date=date,
+                                stock_symbol=stock,
+                                commentary=ai_result['processed_content'], # Col L
+                                lessons="" # Col M (Empty by default for now)
+                            )
+                            if sheet_result['success']:
+                                confirmation += f"📊 Sheet Updated: {sheet_result['message']}\n"
+                            else:
+                                confirmation += f"⚠️ Sheet Error: {sheet_result['message']}\n"
+                        except Exception as e:
+                            confirmation += f"⚠️ Sheet Handling Failed: {str(e)}\n"
+                    else:
+                         confirmation += "⚠️ Trade detected but Date/Stock missing for Sheet.\n"
+
                 if ai_result['category']:
                     confirmation += f"📁 Category: {ai_result['category']}\n"
                 
@@ -334,12 +561,10 @@ If single item, return array with 1 element. If multiple items, return array wit
                 if ai_result['processing_note']:
                     confirmation += f"\n🧠 AI: {ai_result['processing_note'][:150]}"
                 
-                # Show preview of processed content
-                preview = ai_result['processed_content'][:200] + "..." if len(ai_result['processed_content']) > 200 else ai_result['processed_content']
+                preview = ai_result['processed_content'][:2000] + "..." if len(ai_result['processed_content']) > 2000 else ai_result['processed_content']
                 confirmation += f"\n\n📋 Content:\n{preview}"
             else:
-                # Multi-item confirmation
-                confirmation = f"✅ Created {len(entry_ids)} entries from your message!\n\n"
+                confirmation = f"✅ Created {len(entry_ids)} entries!\n\n"
                 for i, (entry_id, ai_result) in enumerate(entry_ids, 1):
                     confirmation += f"**{i}. {ai_result['title'][:40]}**\n"
                     confirmation += f"   📁 {ai_result['category']}"
@@ -350,63 +575,190 @@ If single item, return array with 1 element. If multiple items, return array wit
             await update.message.reply_text(confirmation)
             
         except Exception as e:
-            logger.error(f"AI-first processing failed: {e}")
+            logger.error(f"Unified text processing failed: {e}")
             # Fallback: save as-is
             metadata = self._parse_input_metadata(text)
             entry_id = await self._process_and_store(
                 content=text,
-                content_type=content_type,
+                content_type='text',
                 is_content_idea=metadata['is_content_idea'],
                 output_types=metadata['output_types']
             )
-            await update.message.reply_text(f"✅ Saved (without AI processing). Entry ID: {entry_id}")
+            await update.message.reply_text(f"✅ Saved (basic mode). Entry ID: {entry_id}")
     
     async def handle_image(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle image messages"""
+        """
+        Unified image handler with vision analysis.
+        Uses Gemini Vision for full image understanding, not just OCR.
+        """
         photo = update.message.photo[-1]  # Get highest resolution
         file = await photo.get_file()
         
-        # Download image
-        file_path = f"uploads/images/{photo.file_id}.jpg"
+        # Download image to static/uploads (bot runs from backend/ dir)
+        file_path = f"static/uploads/images/{photo.file_id}.jpg"
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         await file.download_to_drive(file_path)
         
-        # OCR the image
-        extracted_text = self.ai_manager.ocr_image(file_path)
-        
-        # Get caption if provided
         caption = update.message.caption or ""
-        metadata = self._parse_input_metadata(caption) if caption else {'is_content_idea': False, 'output_types': [], 'clean_text': ''}
+        reply_to = update.message.reply_to_message
         
-        # Combine caption and extracted text
-        full_content = f"{metadata['clean_text']}\n\nExtracted from image:\n{extracted_text}"
+        await update.message.reply_text("🔍 Analyzing image with AI vision...")
         
-        # Process and store
-        entry_id = await self._process_and_store(
-            content=full_content,
-            content_type='image',
-            file_path=file_path,
-            is_content_idea=metadata['is_content_idea'],
-            output_types=metadata['output_types']
-        )
+        try:
+            # Extract content with image analysis
+            loop = asyncio.get_running_loop()
+            extracted = await loop.run_in_executor(
+                None,
+                lambda: self.content_extractor.extract_all_content(
+                    text=caption,
+                    image_path=file_path,
+                    reply_to_message=reply_to
+                )
+            )
+            
+            # Process with unified AI
+            ai_items = await loop.run_in_executor(
+                None,
+                lambda: self._unified_ai_process(extracted)
+            )
+            
+            metadata = self._parse_input_metadata(caption) if caption else {'is_content_idea': False, 'output_types': []}
+            
+            entry_ids = []
+            for ai_result in ai_items:
+                entry_id = await self._process_and_store(
+                    content=ai_result['processed_content'],
+                    content_type='image' if len(entry_ids) == 0 else 'text',
+                    file_path=file_path if len(entry_ids) == 0 else None,
+                    is_content_idea=metadata.get('is_content_idea', False) or ai_result['is_content_idea'],
+                    output_types=metadata.get('output_types', []),
+                    category_hint=ai_result['category'],
+                    subcategory_hint=ai_result.get('subcategory'),
+                    title=ai_result['title']
+                )
+                entry_ids.append((entry_id, ai_result))
+            
+            # Build confirmation
+            if len(entry_ids) == 1:
+                entry_id, ai_result = entry_ids[0]
+                confirmation = f"✅ Image analyzed! Entry ID: {entry_id}\n"
+                confirmation += f"📁 Category: {ai_result['category']}\n"
+                
+                if ai_result['is_content_idea']:
+                    confirmation += "💡 Marked as content idea\n"
+                
+                preview = ai_result['processed_content'][:400] + "..." if len(ai_result['processed_content']) > 400 else ai_result['processed_content']
+                confirmation += f"\n📋 Analysis:\n{preview}"
+            else:
+                confirmation = f"✅ Created {len(entry_ids)} entries from image!\n\n"
+                for i, (entry_id, ai_result) in enumerate(entry_ids, 1):
+                    confirmation += f"**{i}. {ai_result['title'][:40]}** (ID: {entry_id})\n"
+            
+            await update.message.reply_text(confirmation)
+            
+        except Exception as e:
+            logger.error(f"Image processing failed: {e}")
+            # Fallback: save with basic OCR
+            extracted_text = self.ai_manager.ocr_image(file_path)
+            entry_id = await self._process_and_store(
+                content=f"{caption}\n\nOCR: {extracted_text}",
+                content_type='image',
+                file_path=file_path
+            )
+            await update.message.reply_text(f"✅ Image saved (basic OCR). Entry ID: {entry_id}")
+    
+    async def handle_animation(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        Handle GIF/animation messages.
+        Telegram sends GIFs as MPEG4 animations. We save them and process like images.
+        """
+        animation = update.message.animation
+        file = await animation.get_file()
         
-        await update.message.reply_text(f"✅ Image processed and saved! Entry ID: {entry_id}")
+        # Determine extension — Telegram may send as mp4 or gif
+        mime_type = animation.mime_type or ''
+        ext = '.gif' if 'gif' in mime_type else '.mp4'
+        
+        # Download to static/uploads (bot runs from backend/ dir)
+        file_path = f"static/uploads/images/{animation.file_id}{ext}"
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        await file.download_to_drive(file_path)
+        
+        caption = update.message.caption or ""
+        reply_to = update.message.reply_to_message
+        
+        await update.message.reply_text("🎞️ Processing GIF/animation...")
+        
+        try:
+            # Process with AI vision (same as images)
+            loop = asyncio.get_running_loop()
+            extracted = await loop.run_in_executor(
+                None,
+                lambda: self.content_extractor.extract_all_content(
+                    text=caption,
+                    image_path=file_path,
+                    reply_to_message=reply_to
+                )
+            )
+            
+            ai_items = await loop.run_in_executor(
+                None,
+                lambda: self._unified_ai_process(extracted)
+            )
+            
+            metadata = self._parse_input_metadata(caption) if caption else {'is_content_idea': False, 'output_types': []}
+            
+            entry_ids = []
+            for ai_result in ai_items:
+                entry_id = await self._process_and_store(
+                    content=ai_result['processed_content'],
+                    content_type='image' if len(entry_ids) == 0 else 'text',
+                    file_path=file_path if len(entry_ids) == 0 else None,
+                    is_content_idea=metadata.get('is_content_idea', False) or ai_result['is_content_idea'],
+                    output_types=metadata.get('output_types', []),
+                    category_hint=ai_result['category'],
+                    subcategory_hint=ai_result.get('subcategory'),
+                    title=ai_result['title']
+                )
+                entry_ids.append((entry_id, ai_result))
+            
+            # Build confirmation
+            if len(entry_ids) == 1:
+                entry_id, ai_result = entry_ids[0]
+                confirmation = f"✅ GIF analyzed! Entry ID: {entry_id}\n"
+                confirmation += f"📁 Category: {ai_result['category']}\n"
+                preview = ai_result['processed_content'][:400] + "..." if len(ai_result['processed_content']) > 400 else ai_result['processed_content']
+                confirmation += f"\n📋 Analysis:\n{preview}"
+            else:
+                confirmation = f"✅ Created {len(entry_ids)} entries from GIF!\n\n"
+                for i, (entry_id, ai_result) in enumerate(entry_ids, 1):
+                    confirmation += f"**{i}. {ai_result['title'][:40]}** (ID: {entry_id})\n"
+            
+            await update.message.reply_text(confirmation)
+            
+        except Exception as e:
+            logger.error(f"GIF processing failed: {e}")
+            entry_id = await self._process_and_store(
+                content=caption or "GIF/Animation uploaded",
+                content_type='image',
+                file_path=file_path
+            )
+            await update.message.reply_text(f"✅ GIF saved (basic). Entry ID: {entry_id}")
     
     async def handle_audio(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
-        Handle voice/audio messages with AI-first processing.
-        Voice notes go through same AI processing as text:
-        - Intent detection (note vs instruction)
-        - Spell/grammar correction
-        - Action execution if instruction
+        Unified voice/audio handler.
+        Transcribes audio, extracts URLs mentioned in speech, and processes with unified AI.
         """
         audio = update.message.voice or update.message.audio
         file = await audio.get_file()
         
-        # Download audio
-        file_path = f"uploads/audio/{audio.file_id}.ogg"
+        # Download audio to static/uploads (bot runs from backend/ dir)
+        file_path = f"static/uploads/audio/{audio.file_id}.ogg"
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         await file.download_to_drive(file_path)
+        
+        reply_to = update.message.reply_to_message
         
         # Transcribe
         await update.message.reply_text("🎙️ Transcribing voice note...")
@@ -416,90 +768,165 @@ If single item, return array with 1 element. If multiple items, return array wit
             await update.message.reply_text("❌ Failed to transcribe voice note")
             return
         
-        # AI-first processing of transcription
         await update.message.reply_text("🧠 Processing with AI...")
-        ai_result = self._ai_process_text(transcription)
         
-        # Parse metadata for output types
-        metadata = self._parse_input_metadata(transcription)
-        
-        # Override is_content_idea if AI detected it
-        if ai_result['is_content_idea']:
-            metadata['is_content_idea'] = True
-        
-        # Process and store
-        entry_id = await self._process_and_store(
-            content=ai_result['processed_content'],
-            content_type='audio',
-            file_path=file_path,
-            is_content_idea=metadata['is_content_idea'] or ai_result['is_content_idea'],
-            output_types=metadata['output_types'],
-            category_hint=ai_result['category'],
-            title=ai_result['title']
-        )
-        
-        # Build confirmation message
-        confirmation = f"✅ Voice note saved! Entry ID: {entry_id}\n"
-        
-        if ai_result['intent'] == "instruction":
-            confirmation += "🤖 Executed as instruction\n"
-        else:
-            confirmation += "📝 Saved as note\n"
-        
-        if ai_result['category']:
-            confirmation += f"📁 Category: {ai_result['category']}\n"
-        
-        if ai_result['is_content_idea']:
-            confirmation += "💡 Marked as content idea\n"
-        
-        if ai_result['processing_note']:
-            confirmation += f"\n🧠 AI: {ai_result['processing_note'][:150]}"
-        
-        # Show preview
-        preview = ai_result['processed_content'][:200] + "..." if len(ai_result['processed_content']) > 200 else ai_result['processed_content']
-        confirmation += f"\n\n📋 Content:\n{preview}"
-        
-        await update.message.reply_text(confirmation)
-        
-        # Send Voice Confirmation (TTS) with processed content
         try:
-            tts_text = f"I've processed your note: {ai_result['processed_content'][:200]}"
-            audio_data = self.ai_manager.text_to_speech(tts_text)
+            loop = asyncio.get_running_loop()
+            # Extract content (URLs mentioned in voice note, reply context)
+            extracted = await loop.run_in_executor(
+                None,
+                lambda: self.content_extractor.extract_all_content(
+                    transcription=transcription,
+                    reply_to_message=reply_to
+                )
+            )
             
-            if audio_data:
-                await update.message.reply_voice(audio_data, caption="🎙️ Voice confirmation")
+            # Show extraction notes if any URLs were found
+            if extracted.get('extraction_notes'):
+                notes = "\n".join(f"• {n}" for n in extracted['extraction_notes'][:3])
+                await update.message.reply_text(f"📥 Extracted:\n{notes}")
+            
+            # Process with unified AI
+            ai_items = await loop.run_in_executor(
+                None,
+                lambda: self._unified_ai_process(extracted)
+            )
+            
+            metadata = self._parse_input_metadata(transcription)
+            
+            entry_ids = []
+            for ai_result in ai_items:
+                entry_id = await self._process_and_store(
+                    content=ai_result['processed_content'],
+                    content_type='audio' if len(entry_ids) == 0 else 'text',
+                    file_path=file_path if len(entry_ids) == 0 else None,
+                    is_content_idea=metadata['is_content_idea'] or ai_result['is_content_idea'],
+                    output_types=metadata['output_types'],
+                    category_hint=ai_result['category'],
+                    subcategory_hint=ai_result.get('subcategory'),
+                    title=ai_result['title']
+                )
+                entry_ids.append((entry_id, ai_result))
+            
+            # Build confirmation
+            if len(entry_ids) == 1:
+                entry_id, ai_result = entry_ids[0]
+                confirmation = f"✅ Voice note processed! Entry ID: {entry_id}\n"
+                confirmation += f"📁 Category: {ai_result['category']}\n"
+                
+                if ai_result['is_content_idea']:
+                    confirmation += "💡 Marked as content idea\n"
+                
+                preview = ai_result['processed_content'][:250] + "..." if len(ai_result['processed_content']) > 250 else ai_result['processed_content']
+                confirmation += f"\n📋 Content:\n{preview}"
             else:
-                logger.warning("TTS generation returned empty data")
+                confirmation = f"✅ Created {len(entry_ids)} entries from voice note!\n\n"
+                for i, (entry_id, ai_result) in enumerate(entry_ids, 1):
+                    confirmation += f"**{i}. {ai_result['title'][:40]}** (ID: {entry_id})\n"
+            
+            await update.message.reply_text(confirmation)
+            
+            # TTS confirmation
+            try:
+                first_content = ai_items[0]['processed_content'] if ai_items else transcription
+                tts_text = f"Processed: {first_content[:150]}"
+                audio_data = self.ai_manager.text_to_speech(tts_text)
+                if audio_data:
+                    await update.message.reply_voice(audio_data, caption="🎙️ Confirmation")
+            except Exception as e:
+                logger.warning(f"TTS failed: {e}")
+                
         except Exception as e:
-            logger.error(f"Failed to send TTS response: {e}")
+            logger.error(f"Voice processing failed: {e}")
+            # Fallback: save transcription as-is
+            entry_id = await self._process_and_store(
+                content=transcription,
+                content_type='audio',
+                file_path=file_path
+            )
+            await update.message.reply_text(f"✅ Voice note saved (basic). Entry ID: {entry_id}")
     
     async def handle_video(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle video messages"""
+        """
+        Unified video handler.
+        Transcribes video audio and processes with unified AI.
+        """
         video = update.message.video
         file = await video.get_file()
         
-        # Download video
-        file_path = f"uploads/videos/{video.file_id}.mp4"
+        # Download video to static/uploads (bot runs from backend/ dir)
+        file_path = f"static/uploads/videos/{video.file_id}.mp4"
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         await file.download_to_drive(file_path)
         
-        # Transcribe
-        transcription = self.ai_manager.transcribe_video(file_path)
-        
-        # Get caption if provided
         caption = update.message.caption or ""
-        metadata = self._parse_input_metadata(caption) if caption else self._parse_input_metadata(transcription)
+        reply_to = update.message.reply_to_message
         
-        # Process and store
-        entry_id = await self._process_and_store(
-            content=metadata['clean_text'],
-            content_type='video',
-            file_path=file_path,
-            is_content_idea=metadata['is_content_idea'],
-            output_types=metadata['output_types']
-        )
+        await update.message.reply_text("🎬 Processing video...")
         
-        await update.message.reply_text(f"✅ Video processed and saved! Entry ID: {entry_id}")
+        try:
+            loop = asyncio.get_running_loop()
+            # Transcribe video audio
+            transcription = await loop.run_in_executor(
+                None,
+                self.ai_manager.transcribe_video,
+                file_path
+            )
+            
+            # Extract content
+            extracted = await loop.run_in_executor(
+                None,
+                lambda: self.content_extractor.extract_all_content(
+                    text=caption,
+                    transcription=transcription,
+                    reply_to_message=reply_to
+                )
+            )
+            
+            # Process with unified AI
+            ai_items = await loop.run_in_executor(
+                None,
+                lambda: self._unified_ai_process(extracted)
+            )
+            
+            metadata = self._parse_input_metadata(caption or transcription)
+            
+            entry_ids = []
+            for ai_result in ai_items:
+                entry_id = await self._process_and_store(
+                    content=ai_result['processed_content'],
+                    content_type='video' if len(entry_ids) == 0 else 'text',
+                    file_path=file_path if len(entry_ids) == 0 else None,
+                    is_content_idea=metadata['is_content_idea'] or ai_result['is_content_idea'],
+                    output_types=metadata['output_types'],
+                    category_hint=ai_result['category'],
+                    subcategory_hint=ai_result.get('subcategory'),
+                    title=ai_result['title']
+                )
+                entry_ids.append((entry_id, ai_result))
+            
+            # Build confirmation
+            if len(entry_ids) == 1:
+                entry_id, ai_result = entry_ids[0]
+                confirmation = f"✅ Video processed! Entry ID: {entry_id}\n"
+                confirmation += f"📁 Category: {ai_result['category']}\n"
+                preview = ai_result['processed_content'][:250] + "..." if len(ai_result['processed_content']) > 250 else ai_result['processed_content']
+                confirmation += f"\n📋 Content:\n{preview}"
+            else:
+                confirmation = f"✅ Created {len(entry_ids)} entries from video!\n\n"
+                for i, (entry_id, ai_result) in enumerate(entry_ids, 1):
+                    confirmation += f"**{i}. {ai_result['title'][:40]}** (ID: {entry_id})\n"
+            
+            await update.message.reply_text(confirmation)
+            
+        except Exception as e:
+            logger.error(f"Video processing failed: {e}")
+            entry_id = await self._process_and_store(
+                content=caption or "Video uploaded",
+                content_type='video',
+                file_path=file_path
+            )
+            await update.message.reply_text(f"✅ Video saved (basic). Entry ID: {entry_id}")
     
     async def _process_and_store(
         self,
@@ -508,8 +935,11 @@ If single item, return array with 1 element. If multiple items, return array wit
         file_path: str = None,
         is_content_idea: bool = False,
         output_types: List[str] = None,
+
         category_hint: str = None,
-        title: str = None
+        subcategory_hint: str = None,
+        title: str = None,
+        source_url: str = None
     ) -> int:
         """Process content and store in database"""
         session = get_session()
@@ -518,6 +948,24 @@ If single item, return array with 1 element. If multiple items, return array wit
             if category_hint:
                 # Use the AI-suggested category name to find ID
                 category_info = self.category_manager.get_category_by_name(category_hint)
+                # Manually handle subcategory if hint provided
+                if subcategory_hint and category_info.get('category_id'):
+                    parent_id = category_info['category_id']
+                    sub_cat = session.query(Category).filter(
+                        Category.name == subcategory_hint, 
+                        Category.parent_id == parent_id
+                    ).first()
+                    if not sub_cat:
+                        # Auto-create subcategory
+                        sub_cat = Category(
+                            name=subcategory_hint,
+                            parent_id=parent_id,
+                            description="Auto-created by AI"
+                        )
+                        session.add(sub_cat)
+                        session.flush()
+                    category_info['subcategory_id'] = sub_cat.id
+
             else:
                 category_info = self.category_manager.suggest_category(content)
             
@@ -532,7 +980,8 @@ If single item, return array with 1 element. If multiple items, return array wit
                 source='telegram',
                 entry_metadata={
                     'is_content_idea': is_content_idea or category_info.get('is_content_idea', False),
-                    'output_types': output_types or []
+                    'output_types': output_types or [],
+                    'source_url': source_url
                 }
             )
             session.add(entry)
