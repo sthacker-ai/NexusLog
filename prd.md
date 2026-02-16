@@ -41,28 +41,31 @@
 
 ---
 
-## Roadmap (Planned)
+## Roadmap
 
-### Near-Term
-- [ ] **Simplified AI Processing**:
-    - **Text/Voice**: Grammar/spelling fix ONLY (no summarization).
-    - **Media**: Save as-is with basic metadata (title).
-    - ~~**Display**: Embed images/videos for direct playback/viewing.~~ ✅ Done
-- [ ] **Google Sheets Integration (Trading Journal)**:
-    - Trigger: "Trading Journal" keyword.
-    - Logic: Match Date + Stock Symbol.
-    - Action: Update specific columns (Commentary, Lessons).
-- [ ] **Multi-Input AI Parsing**: Single voice note → multiple entries (Refined logic)
+### ✅ Completed
+- **Display**: Embed images/videos/GIFs for direct playback/viewing with lightbox
+- **Image/GIF Display**: Backend path fixes, animation handler, frontend lightbox + thumbnails
+- **YouTube Video Embeds**: Native iframe embeds, works in collapsed and expanded views
+- **X/Twitter Link Handling**: Graceful fallback for X.com links
+- **Async Telegram Handlers**: All blocking I/O wrapped in `asyncio.run_in_executor()`
+- **Markdown Typography**: `@tailwindcss/typography` + `remark-gfm` for proper prose styling
+- **Link Behavior**: All links open in new tabs, raw URLs hidden from collapsed view
+- **Bold Entry Titles**: Titles displayed as bold `<h3>` above metadata badges
+- **"To Learn" Category**: New category with subcategories
+- **Security Audit**: Local fonts, token redaction, CSP compliance
 
-### Medium-Term
-- [ ] **Model Stacking**: Priority-based multi-model support (Deferred).
-- [ ] **Notes Section**: OneNote-like hierarchical notes (3 layers).
-- [ ] **Hostinger Deployment**: thinkbits.in/nexuslog
+### 🔮 Future Release
+- [ ] **Simplified AI Processing**: Text/Voice — grammar/spelling fix only (no summarization). Media — save as-is with basic metadata
+- [ ] **Google Sheets Integration (Trading Journal)**: Trigger on "Trading Journal" keyword, match Date + Stock Symbol, update specific columns
+- [ ] **Multi-Input AI Parsing**: Single voice note → multiple entries (refined logic)
+- [ ] **Model Stacking**: Priority-based multi-model support
+- [ ] **Notes Section**: OneNote-like hierarchical notes (3 layers)
+- [ ] **Deployment**: Host on cloud platform (see hosting analysis below)
 - [ ] **Image + Voice Combo**: Smart multimodal input processing
-
-### Deferred
 - [ ] **Chart Legend Fix**: Free limit label in Recharts
 - [ ] **Article Image Extraction**: OCR images embedded within web articles/blogs
+
 
 ---
 
