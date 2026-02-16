@@ -176,9 +176,39 @@ class UsageLog(Base):
 
 # Database connection
 def get_engine():
+    # Try various environment variable names
     database_url = os.getenv('DATABASE_URL')
+    
+    # Try Vercel/Neon standard names
     if not database_url:
-        raise ValueError("DATABASE_URL not set in environment variables")
+        database_url = os.getenv('POSTGRES_URL')
+        
+    # Try User Prefix (NL) variants - cover case sensitivity
+    if not database_url:
+        database_url = os.getenv('NL_DATABASE_URL')
+    if not database_url:
+        database_url = os.getenv('nl_DATABASE_URL')  # Lowercase prefix
+    if not database_url:
+        database_url = os.getenv('NL_POSTGRES_URL')
+    if not database_url:
+        database_url = os.getenv('nl_POSTGRES_URL')
+        
+    if not database_url:
+        # Debugging: Print available keys (security risk? No, just keys)
+        # print(f"Env vars: {list(os.environ.keys())}")
+        raise ValueError("DATABASE_URL not set. Checked: DATABASE_URL, POSTGRES_URL, NL_DATABASE_URL, nl_DATABASE_URL, NL_POSTGRES_URL")
+
+    # Fix deprecated postgres:// protocol for SQLAlchemy
+    if database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+        
+    # Ensure SSL mode for Neon/Production if not running locally with sqlite
+    if 'neondb' in database_url and 'sslmode' not in database_url:
+        if '?' in database_url:
+            database_url += '&sslmode=require'
+        else:
+            database_url += '?sslmode=require'
+
     return create_engine(database_url)
 
 

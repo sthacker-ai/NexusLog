@@ -60,7 +60,8 @@ class GeminiProvider(AIServiceProvider):
     TTS_MODEL = 'gemini-2.5-flash-preview-tts'  # For text-to-speech
     
     def __init__(self):
-        api_key = os.getenv('GOOGLE_AI_API_KEY')
+        # Use get_env to support nl_GOOGLE_AI_API_KEY
+        api_key = get_env('GOOGLE_AI_API_KEY')
         if not api_key:
             raise ValueError("GOOGLE_AI_API_KEY not set")
         genai.configure(api_key=api_key)
@@ -372,8 +373,8 @@ class OllamaProvider(AIServiceProvider):
     """Ollama Local AI Provider (Local - Free)"""
     
     def __init__(self):
-        self.base_url = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')
-        self.model = os.getenv('OLLAMA_MODEL', 'llama2')
+        self.base_url = get_env('OLLAMA_BASE_URL', 'http://localhost:11434')
+        self.model = get_env('OLLAMA_MODEL', 'llama2')
     
     def _generate(self, prompt: str) -> str:
         """Generate text using Ollama"""
@@ -469,7 +470,7 @@ class ReplicateProvider(AIServiceProvider):
     TTS_MODEL = "qwen/qwen3-tts"  # For text-to-speech
     
     def __init__(self):
-        self.api_key = os.getenv('REPLICATE_API_KEY')
+        self.api_key = get_env('REPLICATE_API_KEY')
         if not self.api_key:
             raise ValueError("REPLICATE_API_KEY not set")
         # Replicate library expects REPLICATE_API_TOKEN env var

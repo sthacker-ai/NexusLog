@@ -4,10 +4,12 @@ import requests
 import mimetypes
 from pathlib import Path
 
+from config import get_env
+
 class FileStorage:
     def __init__(self):
-        self.mode = os.getenv('STORAGE_MODE', 'local').lower()
-        self.blob_token = os.getenv('BLOB_READ_WRITE_TOKEN')
+        self.mode = get_env('STORAGE_MODE', 'local').lower()
+        self.blob_token = get_env('BLOB_READ_WRITE_TOKEN')
         
         # Local storage setup
         self.upload_dir = Path('static/uploads')

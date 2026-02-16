@@ -8,14 +8,15 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from typing import List, Dict
+from config import get_env
 
 
 class SheetsIntegration:
     """Google Sheets integration for content ideas"""
     
     def __init__(self):
-        self.credentials_path = os.getenv('GOOGLE_SHEETS_CREDENTIALS_PATH')
-        self.sheet_id = os.getenv('GOOGLE_SHEET_ID')
+        self.credentials_path = get_env('GOOGLE_SHEETS_CREDENTIALS_PATH')
+        self.sheet_id = get_env('GOOGLE_SHEET_ID')
         
         if not self.credentials_path or not self.sheet_id:
             raise ValueError("Google Sheets credentials or sheet ID not configured")

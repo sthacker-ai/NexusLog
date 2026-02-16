@@ -35,18 +35,15 @@ logger = logging.getLogger(__name__)
 
 # ... (Env loading remains same) ...
 # Load environment variables robustly
-load_dotenv()
-if not os.getenv('TELEGRAM_BOT_TOKEN') or not os.getenv('GOOGLE_AI_API_KEY'):
-    parent_env = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
-    if os.path.exists(parent_env):
-        logger.info(f"Loading .env from parent: {parent_env}")
-        load_dotenv(parent_env)
+from config import get_env
+
+# ... (Logging setup remains same) ...
 
 class TelegramBot:
     """Telegram bot for NexusLog"""
     
     def __init__(self):
-        self.token = os.getenv('TELEGRAM_BOT_TOKEN')
+        self.token = get_env('TELEGRAM_BOT_TOKEN')
         if not self.token:
             raise ValueError("TELEGRAM_BOT_TOKEN not set")
         
