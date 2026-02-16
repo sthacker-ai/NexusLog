@@ -321,13 +321,22 @@ class TelegramBot:
 
     async def process_webhook_update(self, update_json):
         """Process an update received via webhook"""
-        if not self._is_initialized:
-            await self.application.initialize()
-            await self.application.start()
-            self._is_initialized = True
-        
-        update = Update.de_json(update_json, self.application.bot)
-        await self.application.process_update(update)
+        try:
+            # Debug log
+            logger.info(f"Processing webhook update. Initialized: {self._is_initialized}, App Running: {self.application.running}")
+            
+            if not self._is_initialized or not self.application._initialized:
+                logger.info("Initializing application...")
+                await self.application.initialize()
+                await self.application.start()
+                self._is_initialized = True
+                logger.info("Application initialized.")
+            
+            update = Update.de_json(update_json, self.application.bot)
+            await self.application.process_update(update)
+        except Exception as e:
+            logger.error(f"Error in process_webhook_update: {e}")
+            raise e
 
     def run_polling(self):
         """Run bot in polling mode"""

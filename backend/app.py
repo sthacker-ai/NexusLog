@@ -86,21 +86,21 @@ except Exception as e:
 @app.route('/api/telegram-webhook', methods=['POST'])
 def telegram_webhook():
     """Handle Telegram Webhook Updates"""
-    global tele_bot
-    if not tele_bot:
-        try:
-             tele_bot = TelegramBot()
-        except:
-             return jsonify({'error': 'Bot not initialized'}), 503
-        
     try:
         # Get JSON data
         update_json = request.get_json(force=True)
         
         # Process update asynchronously
+        # Create a new event loop for this request
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        loop.run_until_complete(tele_bot.process_webhook_update(update_json))
+        
+        # Instantiate bot FRESH for every request because Application objects 
+        # are bound to the event loop. Since we create a new loop per request,
+        # we must create a new Application (Bot) instance.
+        bot = TelegramBot()
+        
+        loop.run_until_complete(bot.process_webhook_update(update_json))
         loop.close()
         
         return jsonify({'status': 'ok'})
