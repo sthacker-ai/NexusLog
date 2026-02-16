@@ -20,18 +20,21 @@ load_dotenv()
 import logging
 import os
 
-# Ensure logs directory exists
-os.makedirs('logs', exist_ok=True)
+# Configure Logging
+log_handlers = [logging.StreamHandler()]  # Console output always
 
-# Configure Logging - both console and file output
+try:
+    # Ensure logs directory exists - may fail on Read-Only FS (Vercel)
+    os.makedirs('logs', exist_ok=True)
+    log_handlers.append(logging.FileHandler('logs/backend.log', mode='a', encoding='utf-8'))
+except OSError:
+    pass
+
 log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logging.basicConfig(
     level=logging.INFO,
     format=log_format,
-    handlers=[
-        logging.StreamHandler(),  # Console output
-        logging.FileHandler('logs/backend.log', mode='a', encoding='utf-8')  # File output
-    ]
+    handlers=log_handlers
 )
 logger = logging.getLogger(__name__)
 
