@@ -769,38 +769,8 @@ def get_analytics():
         session.close()
 
 
-# ========================================
-# Telegram Webhook (for production)
-# ========================================
 
-# ========================================
-# Telegram Webhook (for production)
-# ========================================
 
-# Initialize bot (lazy load to avoid circular imports if possible, but here we need it)
-try:
-    from telegram_bot import TelegramBot
-    from telegram import Update
-    # Initialize bot
-    bot = TelegramBot()
-except Exception as e:
-    logger.error(f"Failed to initialize TelegramBot in app.py: {e}")
-    bot = None
-
-@app.route('/api/telegram/webhook', methods=['POST'])
-async def telegram_webhook():
-    """Handle Telegram webhook"""
-    if not bot:
-        return jsonify({'error': 'Bot not initialized'}), 500
-        
-    try:
-        data = request.get_json(force=True)
-        # Process update asynchronously
-        await bot.process_webhook_update(data)
-        return jsonify({'status': 'success'})
-    except Exception as e:
-        logger.error(f"Webhook processing error: {e}")
-        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/uploads/<path:filename>')
