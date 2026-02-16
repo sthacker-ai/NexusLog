@@ -11,12 +11,18 @@ class FileStorage:
         self.mode = get_env('STORAGE_MODE', 'local').lower()
         self.blob_token = get_env('BLOB_READ_WRITE_TOKEN')
         
-        # Local storage setup
-        self.upload_dir = Path('static/uploads')
-        self.upload_dir.mkdir(parents=True, exist_ok=True)
-        (self.upload_dir / 'images').mkdir(exist_ok=True)
-        (self.upload_dir / 'audio').mkdir(exist_ok=True)
-        (self.upload_dir / 'video').mkdir(exist_ok=True)
+        try:
+            # Local storage setup
+            self.upload_dir = Path('static/uploads')
+            self.upload_dir.mkdir(parents=True, exist_ok=True)
+            (self.upload_dir / 'images').mkdir(exist_ok=True)
+            (self.upload_dir / 'audio').mkdir(exist_ok=True)
+            (self.upload_dir / 'video').mkdir(exist_ok=True)
+        except OSError:
+            # Vercel Read-Only FS
+            print("Warning: Read-only filesystem, local uploads disabled.")
+            if self.mode != 'vercel_blob':
+                print("Critical: STORAGE_MODE is local but filesystem is read-only. Uploads will fail.")
 
     def save_file(self, file_data: bytes, filename: str, content_type: str = None) -> str:
         """

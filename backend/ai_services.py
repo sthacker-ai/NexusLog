@@ -11,6 +11,7 @@ import google.generativeai as genai
 from models import get_session, UsageLog
 import json
 from datetime import datetime
+from config import get_env
 
 
 class AIServiceProvider(ABC):
