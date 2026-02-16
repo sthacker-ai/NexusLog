@@ -320,6 +320,11 @@ class TelegramBot:
 
     async def process_webhook_update(self, update_json):
         """Process an update received via webhook"""
+        # Ensure application is initialized
+        if not self.application.running:
+            await self.application.initialize()
+            await self.application.start()
+        
         update = Update.de_json(update_json, self.application.bot)
         await self.application.process_update(update)
 
