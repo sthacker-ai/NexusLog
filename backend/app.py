@@ -70,6 +70,46 @@ except Exception as e:
 
 
 # ========================================
+# Telegram Bot Integration (Webhook)
+# ========================================
+from telegram_bot import TelegramBot
+import asyncio
+
+tele_bot = None
+try:
+    # Initialize bot (will use get_env internally)
+    tele_bot = TelegramBot()
+    logger.info("Telegram Bot initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize Telegram Bot: {e}")
+
+@app.route('/api/telegram-webhook', methods=['POST'])
+def telegram_webhook():
+    """Handle Telegram Webhook Updates"""
+    global tele_bot
+    if not tele_bot:
+        try:
+             tele_bot = TelegramBot()
+        except:
+             return jsonify({'error': 'Bot not initialized'}), 503
+        
+    try:
+        # Get JSON data
+        update_json = request.get_json(force=True)
+        
+        # Process update asynchronously
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(tele_bot.process_webhook_update(update_json))
+        loop.close()
+        
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        logger.error(f"Webhook processing error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ========================================
 # Health Check
 # ========================================
 
