@@ -233,7 +233,14 @@ class WebhookHandler:
             # Determine content type and extract source URL
             has_youtube = len(extracted.get('youtube_content', [])) > 0
             has_urls = len(extracted.get('url_content', [])) > 0
-            content_type = 'youtube' if has_youtube else ('link' if has_urls else 'text')
+            
+            # Fix YouTube Type: If it's YouTube, ALWAYS be 'video' to match frontend filter
+            if has_youtube:
+                content_type = 'video'
+            elif has_urls:
+                content_type = 'link'
+            else:
+                content_type = 'text'
             
             # Extract the original source URL
             source_url = None
@@ -316,8 +323,10 @@ class WebhookHandler:
             
             # Analyze image with AI if available
             try:
-                image_analysis = self.ai_manager.analyze_image(file_data)
-                extracted['image_analysis'] = image_analysis
+                # DISABLED for Vercel performance/cost - relying on user caption
+                # image_analysis = self.ai_manager.analyze_image(file_data)
+                # extracted['image_analysis'] = image_analysis
+                extracted['image_analysis'] = caption or "Image uploaded"
             except Exception as e:
                 logger.warning(f"Image analysis failed: {e}")
                 extracted['image_analysis'] = caption or "Image uploaded"
@@ -430,6 +439,11 @@ class WebhookHandler:
                 if len(entry_ids) == 1:
                     entry_id, ai_result = entry_ids[0]
                     confirmation = f"✅ Voice note processed! Entry ID: {entry_id}\n"
+                    
+                    if ai_result.get('intent') == 'trade_journal':
+                        trade_msg = self._handle_trade_journal(ai_result)
+                        confirmation += trade_msg
+                    
                     confirmation += f"📁 Category: {ai_result['category']}\n"
                     if ai_result['is_content_idea']:
                         confirmation += "💡 Marked as content idea\n"
@@ -484,7 +498,9 @@ class WebhookHandler:
                     temp.write(file_data)
                     temp_path = temp.name
                 
-                transcription = self.ai_manager.transcribe_video(temp_path)
+                # DISABLED for Vercel performance - no video transcription
+                # transcription = self.ai_manager.transcribe_video(temp_path)
+                transcription = ""
             except Exception as e:
                 logger.warning(f"Video transcription failed: {e}")
             finally:
@@ -579,7 +595,7 @@ class WebhookHandler:
             for ai_result in ai_items:
                 entry_id = self._process_and_store(
                     content=ai_result['processed_content'],
-                    content_type='image' if len(entry_ids) == 0 else 'text',
+                    content_type='video' if len(entry_ids) == 0 else 'text', # Animation/GIF = video
                     file_path=persistent_path if len(entry_ids) == 0 else None,
                     is_content_idea=metadata.get('is_content_idea', False) or ai_result['is_content_idea'],
                     output_types=metadata.get('output_types', []),
@@ -698,6 +714,17 @@ class WebhookHandler:
                     'intent': 'note'
                 }]
             
+            
+            # Fetch dynamic categories
+            all_cats = self.category_manager.get_all_categories()
+            cat_list = [c['name'] for c in all_cats] if all_cats else []
+            # Add defaults if missing
+            defaults = ["Content Ideas", "VibeCoding Projects", "Stock Trading", "To-Do", "To Learn", "General Notes"]
+            for d in defaults:
+                if d not in cat_list:
+                    cat_list.append(d)
+            categories_str = ", ".join(cat_list)
+
             ai_prompt = f"""You are NexusLog Smart Logger. Analyze the input and respond in JSON.
 
 INPUT CONTENT:
@@ -707,16 +734,23 @@ INSTRUCTIONS:
 1. **NO SUMMARIZATION**: Do not summarize articles, videos, or external content.
 2. **Text/Voice Notes**: Correct grammar, spelling, and formatting ONLY. Retain the original message length, tone, and details.
 3. **Media/Links**: detailed log entry with the Title and Metadata. Do not hallucinate content you don't see.
-4. **Trading Journal**: If the input mentions "Trading Journal", "Trade", "Stock", or specific stock symbols with dates, identify as "Stock Trading".
 
-CATEGORIES: "Content Ideas", "VibeCoding Projects", "Stock Trading", "To-Do", "To Learn" (subcategories: "Reading List", "Videos"), "General Notes"
+**SPECIAL HANDLING**:
+- **Trading Journal**: If the input mentions "Trading Journal", "Trade", "Sold", "Bought" with a stock symbol (e.g., AAPL, TSLA) and/or date:
+    - Set `intent` to "trade_journal".
+    - Extract `date` (format: MM/DD/YYYY, default to today if "today" mentioned).
+    - Extract `stock_symbol` (Ticker).
+    - Content should be the commentary/lessons.
+- **YouTube Education**: If a YouTube video is a tutorial, how-to, or educational, categorize as "Learn" (or "To Learn").
+
+CATEGORIES: {categories_str}
 
 Respond ONLY with valid JSON:
 {{
   "items": [
     {{
       "intent": "note" | "trade_journal",
-      "date": "M/D/YYYY",
+      "date": "MM/DD/YYYY",
       "stock_symbol": "SYMBOL",
       "title": "<Short descriptive title>",
       "processed_content": "<The corrected text OR metadata description>",
@@ -935,16 +969,25 @@ Respond ONLY with valid JSON:
             return "\n⚠️ Trade detected but Date/Stock missing for Sheet.\n"
         
         try:
+            # Use the robust update logic
             sheets = SheetsIntegration()
+            
+            # Map content to commentary/lessons logic
+            # For now, we put the whole content in 'commentary' (Col L)
+            # If user splits it? AI prompt doesn't split it yet.
+            # We'll just put processed_content into commentary.
+            
             sheet_result = sheets.log_trade_journal(
                 date=date,
                 stock_symbol=stock,
                 commentary=ai_result['processed_content'],
-                lessons=""
+                lessons="" # AI doesn't split lessons yet, maybe future improvement
             )
+            
             if sheet_result.get('success'):
-                return f"\n📊 Sheet Updated: {sheet_result['message']}\n"
+                return f"\n{sheet_result['message']}\n"
             else:
-                return f"\n⚠️ Sheet Error: {sheet_result.get('message', 'Unknown')}\n"
+                return f"\n{sheet_result.get('message', 'Unknown Error')}\n"
+                
         except Exception as e:
             return f"\n⚠️ Sheet Handling Failed: {str(e)}\n"

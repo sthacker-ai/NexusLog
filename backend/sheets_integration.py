@@ -136,43 +136,6 @@ class SheetsIntegration:
             print(f"Error creating header: {e}")
     
     def find_row_by_values(self, sheet_name: str, identifier_columns: List[str], 
-                           identifier_values: List[str], data_range: str = None, reverse: bool = False) -> int:
-        """
-        Find a row by matching values in multiple columns.
-        
-        Args:
-            sheet_name: Name of the sheet tab
-            identifier_columns: Column letters to match
-            identifier_values: Values to find
-            data_range: Optional specific range
-            reverse: If True, search from bottom up (for chronological logs)
-        
-        Returns:
-            Row number (1-indexed) if found, -1 if not found
-        """
-        try:
-            # Determine search range
-            if data_range:
-                search_range = f"'{sheet_name}'!{data_range}"
-            else:
-                # Default: search all data up to column Z
-                search_range = f"'{sheet_name}'!A:Z"
-            
-            result = self.service.spreadsheets().values().get(
-                spreadsheetId=self.sheet_id, # Default ID, overridden in wrapper if needed but this method uses self.sheet_id
-                range=search_range           # Wait, find_row uses self.sheet_id. 
-                                             # I need to allow passing sheet_id to this method too!
-            ).execute()
-            
-            # ... NO, I should update find_row_by_values signature to accept sheet_id
-            pass
-            
-        except Exception:
-             pass
-
-    # RE-WRITING THE WHOLE METHOD TO FIX THE SHEET_ID ISSUE
-    
-    def find_row_by_values(self, sheet_name: str, identifier_columns: List[str], 
                            identifier_values: List[str], data_range: str = None, 
                            reverse: bool = False, sheet_id: str = None) -> int:
         """
@@ -210,16 +173,16 @@ class SheetsIntegration:
             for row_idx, row in rows_iter:
                 # Check if all identifier values match
                 matches = True
-                for col_idx, expected_value in zip(col_indices, identifier_values):
+                for idx_in_identifiers, col_idx in enumerate(col_indices):
                     if col_idx >= len(row):
                         matches = False
                         break
-                    # Case-insensitive, trimmed comparison
-                    # Allow fuzzy match for stock symbol? User said "match STOCK SYMBOL"
-                    # For date, exact match is best.
+                    
+                    expected_value = identifier_values[idx_in_identifiers]
                     val = str(row[col_idx]).strip().lower()
                     exp = str(expected_value).strip().lower()
                     
+                    # Date comparison might need more robustness, but exacting string match is safest for now
                     if val != exp:
                         matches = False
                         break
@@ -243,29 +206,19 @@ class SheetsIntegration:
         sheet_id: 1dNB-i8GoYDR4upLYN-swX6G2wZn1rCnEE7SDnRf1BP8
         """
         TRADING_SHEET_ID = '1dNB-i8GoYDR4upLYN-swX6G2wZn1rCnEE7SDnRf1BP8'
-        SHEET_NAME = "Journal" # Or whatever the tab name is. User didn't specify tab name?
-        # User said: "identifying entries by DATE... and STOCK SYMBOL"
-        # "columns L and M are 'Trade Commentary' and 'Lessons Learned'".
-        # I'll assume tab name is 'Journal' or 'Sheet1' or 'Trades'.
-        # I'll try 'Journal' first, maybe make it configurable?
-        # Let's assume 'Sheet1' if unknown, or maybe I should list sheets?
-        # User's previous convo mentioned "Trading Journal".
-        # I will use "Journal" as a safe guess or "Trading Journal".
-        # Actually I can get the first sheet name if I want.
-        # But let's use "Journal" for now.
-        SHEET_KEY = "Journal" 
+        SHEET_NAME = "Journal"
         
         # 1. Find the row (Reverse chronological)
         row_num = self.find_row_by_values(
-            sheet_name=SHEET_KEY, # This might fail if tab name is wrong
-            identifier_columns=['A', 'B'], # Assuming Date=A, Ticker=B
+            sheet_name=SHEET_NAME,
+            identifier_columns=['A', 'B'], # Date=A, Ticker=B
             identifier_values=[date, stock_symbol],
             reverse=True,
             sheet_id=TRADING_SHEET_ID
         )
         
         if row_num == -1:
-            return {'success': False, 'message': f"No matching trade found for {stock_symbol} on {date}"}
+            return {'success': False, 'message': f"❌ Error: No matching trade found for {stock_symbol} on {date}. Checking 'Journal' tab."}
         
         # 2. Update Columns L and M
         updates = []
@@ -276,7 +229,7 @@ class SheetsIntegration:
             
         messages = []
         for up in updates:
-            cell_ref = f"'{SHEET_KEY}'!{up['col']}{row_num}"
+            cell_ref = f"'{SHEET_NAME}'!{up['col']}{row_num}"
             try:
                 self.service.spreadsheets().values().update(
                     spreadsheetId=TRADING_SHEET_ID,
@@ -288,4 +241,4 @@ class SheetsIntegration:
             except Exception as e:
                 messages.append(f"Failed {up['col']}: {str(e)}")
                 
-        return {'success': True, 'message': f"Log updated (Row {row_num}): {', '.join(messages)}"}
+        return {'success': True, 'message': f"Log updated for {stock_symbol} (Row {row_num}): {', '.join(messages)}"}
