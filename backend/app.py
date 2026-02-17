@@ -70,38 +70,24 @@ except Exception as e:
 
 
 # ========================================
-# Telegram Bot Integration (Webhook)
+# Telegram Bot Integration (Webhook - Stateless)
 # ========================================
-from telegram_bot import TelegramBot
-import asyncio
-
-tele_bot = None
-try:
-    # Initialize bot (will use get_env internally)
-    tele_bot = TelegramBot()
-    logger.info("Telegram Bot initialized successfully")
-except Exception as e:
-    logger.error(f"Failed to initialize Telegram Bot: {e}")
+from config import get_env
 
 @app.route('/api/telegram-webhook', methods=['POST'])
 def telegram_webhook():
-    """Handle Telegram Webhook Updates"""
+    """Handle Telegram Webhook Updates — stateless for Vercel serverless."""
     try:
-        # Get JSON data
         update_json = request.get_json(force=True)
+        token = get_env('TELEGRAM_BOT_TOKEN')
+        if not token:
+            logger.error("TELEGRAM_BOT_TOKEN not configured")
+            return jsonify({'error': 'Bot not configured'}), 500
         
-        # Process update asynchronously
-        # Create a new event loop for this request
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        # Instantiate bot FRESH for every request because Application objects 
-        # are bound to the event loop. Since we create a new loop per request,
-        # we must create a new Application (Bot) instance.
-        bot = TelegramBot()
-        
-        loop.run_until_complete(bot.process_webhook_update(update_json))
-        loop.close()
+        # Use stateless WebhookHandler — no Application lifecycle needed
+        from webhook_handler import WebhookHandler
+        handler = WebhookHandler(token)
+        handler.process_update(update_json)
         
         return jsonify({'status': 'ok'})
     except Exception as e:

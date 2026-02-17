@@ -35,3 +35,4 @@ yt-dlp>=2023.11.16
 trafilatura>=1.6.3
 youtube-transcript-api>=0.6.1
 vercel-blob>=0.1.0
+httpx>=0.25.0
