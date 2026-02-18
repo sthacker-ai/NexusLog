@@ -10,8 +10,8 @@ from config import get_env
 class FileStorage:
     def __init__(self):
         self.mode = get_env('STORAGE_MODE', 'local').lower()
-        # Support both standard and NL_ prefixed token
-        self.blob_token = get_env('BLOB_READ_WRITE_TOKEN') or get_env('NL_BLOB_READ_WRITE_TOKEN')
+        # Support standard, NL_ prefix, and user's specific nl_READ_WRITE_TOKEN
+        self.blob_token = get_env('BLOB_READ_WRITE_TOKEN') or get_env('READ_WRITE_TOKEN')
         
         self.upload_dir = Path('static/uploads')
         self.is_readonly = False
