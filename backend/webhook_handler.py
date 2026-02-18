@@ -140,6 +140,8 @@ class WebhookHandler:
                 self._handle_audio(chat_id, message)
             elif message.get('video'):
                 self._handle_video(chat_id, message)
+            elif 'document' in message:
+                self._handle_document(message['document'], chat_id, message.get('caption'))
             elif message.get('animation'):
                 self._handle_animation(chat_id, message)
             else:
@@ -299,8 +301,11 @@ class WebhookHandler:
         
         try:
             # Get the highest resolution photo
-            photo = message['photo'][-1]
-            file_info = self.get_file(photo['file_id'])
+            photo_data = message['photo'][-1]
+            file_id = photo_data['file_id']
+            file_name = photo_data.get('file_unique_id', file_id) + '.jpg' # Use unique_id for filename
+            
+            file_info = self.get_file(file_id)
             if not file_info:
                 self.send_message(chat_id, "❌ Failed to get image from Telegram")
                 return
@@ -310,12 +315,13 @@ class WebhookHandler:
                 self.send_message(chat_id, "❌ Failed to download image")
                 return
             
-            # Save to persistent storage
-            timestamp = int(time.time())
-            filename = f"images/{timestamp}_{photo['file_id']}.jpg"
+            # Save to persistent storage (Local or Blob)
+            filename = f"images/{file_id}_{file_name}"
             persistent_path = storage.save_file(file_data, filename, content_type='image/jpeg')
             
-            # Process with AI (vision analysis)
+            if not persistent_path:
+                persistent_path = "storage_failed" # Placeholder to avoid DB error
+            
             caption = message.get('caption', '')
             
             # Build extracted content for unified AI
@@ -378,7 +384,10 @@ class WebhookHandler:
         
         try:
             audio = message.get('voice') or message.get('audio')
-            file_info = self.get_file(audio['file_id'])
+            file_id = audio['file_id']
+            file_name = audio.get('file_unique_id', file_id) + '.ogg' # Use unique_id for filename
+            
+            file_info = self.get_file(file_id)
             if not file_info:
                 self.send_message(chat_id, "❌ Failed to get audio from Telegram")
                 return
@@ -388,80 +397,79 @@ class WebhookHandler:
                 self.send_message(chat_id, "❌ Failed to download audio")
                 return
             
-            # Save to persistent storage
-            timestamp = int(time.time())
-            filename = f"audio/{timestamp}_{audio['file_id']}.ogg"
+            # 1. Save to temp for transcription
+            temp_path = storage.save_temp(file_data, suffix='.ogg')
+            
+            # 2. Transcribe (requires local file)
+            transcription = ""
+            if temp_path:
+                try:
+                    transcription = self.ai_manager.transcribe_audio(temp_path)
+                finally:
+                    # Cleanup temp
+                    try:
+                        os.unlink(temp_path)
+                    except Exception as e:
+                        logger.warning(f"Failed to delete temp audio file {temp_path}: {e}")
+            
+            # 3. Save to persistent storage
+            filename = f"audio/{file_id}_{file_name}"
             persistent_path = storage.save_file(file_data, filename, content_type='audio/ogg')
             
-            # Save to temp file for transcription
-            temp_path = None
-            try:
-                with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as temp:
-                    temp.write(file_data)
-                    temp_path = temp.name
+            if not persistent_path:
+                persistent_path = "storage_failed"
                 
-                # Transcribe
-                transcription = self.ai_manager.transcribe_audio(temp_path)
-                
-                if not transcription:
-                    self.send_message(chat_id, "❌ Failed to transcribe voice note")
-                    return
-                
-                self.send_message(chat_id, "🧠 Processing with AI...")
-                
-                reply_to = message.get('reply_to_message')
-                
-                # Extract content (URLs mentioned in voice note)
-                extracted = self.content_extractor.extract_all_content(
-                    transcription=transcription,
-                    reply_to_message=reply_to
+            self.send_message(chat_id, "🧠 Processing with AI...")
+            
+            reply_to = message.get('reply_to_message')
+            
+            # Extract content (URLs mentioned in voice note)
+            extracted = self.content_extractor.extract_all_content(
+                transcription=transcription,
+                reply_to_message=reply_to
+            )
+            
+            # Process with unified AI
+            ai_items = self._unified_ai_process(extracted)
+            metadata = self._parse_input_metadata(transcription)
+            
+            entry_ids = []
+            for ai_result in ai_items:
+                entry_id = self._process_and_store(
+                    content=ai_result['processed_content'],
+                    content_type='audio' if len(entry_ids) == 0 else 'text',
+                    file_path=persistent_path if len(entry_ids) == 0 else None,
+                    is_content_idea=metadata['is_content_idea'] or ai_result['is_content_idea'],
+                    output_types=metadata['output_types'],
+                    category_hint=ai_result['category'],
+                    subcategory_hint=ai_result.get('subcategory'),
+                    title=ai_result['title']
                 )
+                entry_ids.append((entry_id, ai_result))
+            
+            # Build confirmation
+            if len(entry_ids) == 1:
+                entry_id, ai_result = entry_ids[0]
+                confirmation = f"✅ Voice note processed! Entry ID: {entry_id}\n"
                 
-                # Process with unified AI
-                ai_items = self._unified_ai_process(extracted)
-                metadata = self._parse_input_metadata(transcription)
+                if ai_result.get('intent') == 'trade_journal':
+                    trade_msg = self._handle_trade_journal(ai_result)
+                    confirmation += trade_msg
                 
-                entry_ids = []
-                for ai_result in ai_items:
-                    entry_id = self._process_and_store(
-                        content=ai_result['processed_content'],
-                        content_type='audio' if len(entry_ids) == 0 else 'text',
-                        file_path=persistent_path if len(entry_ids) == 0 else None,
-                        is_content_idea=metadata['is_content_idea'] or ai_result['is_content_idea'],
-                        output_types=metadata['output_types'],
-                        category_hint=ai_result['category'],
-                        subcategory_hint=ai_result.get('subcategory'),
-                        title=ai_result['title']
-                    )
-                    entry_ids.append((entry_id, ai_result))
-                
-                # Build confirmation
-                if len(entry_ids) == 1:
-                    entry_id, ai_result = entry_ids[0]
-                    confirmation = f"✅ Voice note processed! Entry ID: {entry_id}\n"
-                    
-                    if ai_result.get('intent') == 'trade_journal':
-                        trade_msg = self._handle_trade_journal(ai_result)
-                        confirmation += trade_msg
-                    
-                    confirmation += f"📁 Category: {ai_result['category']}\n"
-                    if ai_result['is_content_idea']:
-                        confirmation += "💡 Marked as content idea\n"
-                    preview = ai_result['processed_content'][:250]
-                    if len(ai_result['processed_content']) > 250:
-                        preview += "..."
-                    confirmation += f"\n📋 Content:\n{preview}"
-                else:
-                    confirmation = f"✅ Created {len(entry_ids)} entries from voice note!\n\n"
-                    for i, (entry_id, ai_result) in enumerate(entry_ids, 1):
-                        confirmation += f"{i}. {ai_result['title'][:40]} (ID: {entry_id})\n"
-                
-                self.send_message(chat_id, confirmation)
-                
-            finally:
-                if temp_path and os.path.exists(temp_path):
-                    os.unlink(temp_path)
-                    
+                confirmation += f"📁 Category: {ai_result['category']}\n"
+                if ai_result['is_content_idea']:
+                    confirmation += "💡 Marked as content idea\n"
+                preview = ai_result['processed_content'][:250]
+                if len(ai_result['processed_content']) > 250:
+                    preview += "..."
+                confirmation += f"\n📋 Content:\n{preview}"
+            else:
+                confirmation = f"✅ Created {len(entry_ids)} entries from voice note!\n\n"
+                for i, (entry_id, ai_result) in enumerate(entry_ids, 1):
+                    confirmation += f"{i}. {ai_result['title'][:40]} (ID: {entry_id})\n"
+            
+            self.send_message(chat_id, confirmation)
+            
         except Exception as e:
             logger.error(f"Audio processing failed: {e}", exc_info=True)
             self.send_message(chat_id, f"❌ Error processing audio: {str(e)[:200]}")
@@ -472,7 +480,12 @@ class WebhookHandler:
         
         try:
             video = message['video']
-            file_info = self.get_file(video['file_id'])
+            file_id = video['file_id']
+            mime = video.get('mime_type', 'video/mp4')
+            ext = '.' + mime.split('/')[-1] if '/' in mime else '.mp4'
+            file_name = video.get('file_unique_id', file_id) + ext
+            
+            file_info = self.get_file(file_id)
             if not file_info:
                 self.send_message(chat_id, "❌ Failed to get video from Telegram")
                 return
@@ -482,30 +495,19 @@ class WebhookHandler:
                 self.send_message(chat_id, "❌ Failed to download video")
                 return
             
-            # Save to persistent storage
-            timestamp = int(time.time())
-            filename = f"video/{timestamp}_{video['file_id']}.mp4"
-            persistent_path = storage.save_file(file_data, filename, content_type='video/mp4')
+            # Save file persistently
+            filename = f"video/{file_id}_{file_name}"
+            persistent_path = storage.save_file(file_data, filename, content_type=mime)
             
+            if not persistent_path:
+                persistent_path = "storage_failed"
+
             caption = message.get('caption', '')
             reply_to = message.get('reply_to_message')
             
-            # Try to transcribe video audio
-            temp_path = None
-            transcription = None
-            try:
-                with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp:
-                    temp.write(file_data)
-                    temp_path = temp.name
-                
-                # DISABLED for Vercel performance - no video transcription
-                # transcription = self.ai_manager.transcribe_video(temp_path)
-                transcription = ""
-            except Exception as e:
-                logger.warning(f"Video transcription failed: {e}")
-            finally:
-                if temp_path and os.path.exists(temp_path):
-                    os.unlink(temp_path)
+            transcription = ""
+            # DISABLED for Vercel performance - no video transcription
+            # If enabled in future: use storage.save_temp() -> transcribe -> unlink
             
             # Extract content
             extracted = self.content_extractor.extract_all_content(
@@ -513,6 +515,11 @@ class WebhookHandler:
                 transcription=transcription,
                 reply_to_message=reply_to
             )
+            extracted['video_content'] = [{
+                'path': persistent_path,
+                'file_id': file_id,
+                'transcription': transcription
+            }]
             
             # Process with unified AI
             ai_items = self._unified_ai_process(extracted)
