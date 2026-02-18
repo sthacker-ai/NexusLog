@@ -632,6 +632,55 @@ class WebhookHandler:
             logger.error(f"Animation processing failed: {e}", exc_info=True)
             self.send_message(chat_id, f"❌ Error processing GIF: {str(e)[:200]}")
     
+    def _handle_document(self, doc_data: dict, chat_id: int, caption: str = None) -> list:
+        """Handle PDF and other documents."""
+        try:
+            file_id = doc_data['file_id']
+            file_name = doc_data.get('file_name', 'document.pdf')
+            mime_type = doc_data.get('mime_type', 'application/pdf')
+            
+            if 'pdf' not in mime_type and not file_name.lower().endswith('.pdf'):
+                self.send_message(chat_id, "⚠️ I mainly support PDF documents right now.")
+                # We can still save it, just maybe not extract text nicely
+            
+            # Get file path first
+            file_info = self.get_file(file_id)
+            if not file_info:
+                self.send_message(chat_id, "❌ Failed to get document info from Telegram")
+                return []
+            
+            # Download file
+            file_data = self.download_file(file_info['file_path'])
+            if not file_data:
+                self.send_message(chat_id, "❌ Failed to download document")
+                return []
+            
+            # Save persistent
+            filename = f"documents/{file_id}_{file_name}"
+            persistent_path = storage.save_file(file_data, filename, content_type=mime_type)
+            
+            if not persistent_path:
+                persistent_path = "storage_failed"
+            
+            # Extract text from PDF using pypdf or similar?
+            # For now, treat as a file attachment entry
+            
+            extracted = {
+                'text': caption or f"Document: {file_name}",
+                'document_content': [{
+                    'path': persistent_path,
+                    'file_id': file_id,
+                    'filename': file_name
+                }]
+            }
+            
+            return self._unified_ai_process(extracted)
+            
+        except Exception as e:
+            logger.error(f"Document handling error: {e}")
+            self.send_message(chat_id, "❌ Valid document but processing failed.")
+            return []
+
     # ========================================
     # AI Processing (reused from TelegramBot)
     # ========================================

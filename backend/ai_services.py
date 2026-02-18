@@ -117,7 +117,9 @@ class GeminiProvider(AIServiceProvider):
         print(f"Uploading audio to Gemini: {audio_path} (Size: {file_size} bytes)")
         
         # Upload once, reuse across model attempts
-        audio_file_obj = genai.upload_file(audio_path)
+        # Pass mime_type explicitly to avoid "Unknown mime type" error on temp files
+        mime_type = 'audio/ogg' if audio_path.endswith('.ogg') else None
+        audio_file_obj = genai.upload_file(audio_path, mime_type=mime_type)
         print(f"Gemini file uri: {audio_file_obj.uri}")
         
         def _do_transcribe():
