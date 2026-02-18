@@ -140,10 +140,10 @@ class WebhookHandler:
                 self._handle_audio(chat_id, message)
             elif message.get('video'):
                 self._handle_video(chat_id, message)
-            elif 'document' in message:
-                self._handle_document(message['document'], chat_id, message.get('caption'))
             elif message.get('animation'):
                 self._handle_animation(chat_id, message)
+            elif 'document' in message:
+                self._handle_document(message['document'], chat_id, message.get('caption'))
             else:
                 self.send_message(chat_id, "🤔 I don't know how to handle this type of content yet.")
                 
@@ -639,8 +639,13 @@ class WebhookHandler:
             file_name = doc_data.get('file_name', 'document.pdf')
             mime_type = doc_data.get('mime_type', 'application/pdf')
             
-            if 'pdf' not in mime_type and not file_name.lower().endswith('.pdf'):
-                self.send_message(chat_id, "⚠️ I mainly support PDF documents right now.")
+            # Check for GIF/Video sent as file
+            if mime_type == 'image/gif' or mime_type == 'video/mp4':
+                # Treat as animation/video
+                # But since we are here, just save it and process as document but without checking for PDF
+                pass
+            elif 'pdf' not in mime_type and not file_name.lower().endswith('.pdf'):
+                self.send_message(chat_id, "⚠️ I mainly support PDF documents right now. I'll try to save this anyway.")
                 # We can still save it, just maybe not extract text nicely
             
             # Get file path first
@@ -674,7 +679,41 @@ class WebhookHandler:
                 }]
             }
             
-            return self._unified_ai_process(extracted)
+            # Process with unified AI
+            ai_items = self._unified_ai_process(extracted)
+            metadata = self._parse_input_metadata(caption) if caption else {
+                'is_content_idea': False, 'output_types': [], 'clean_text': ''
+            }
+            
+            entry_ids = []
+            for ai_result in ai_items:
+                entry_id = self._process_and_store(
+                    content=ai_result['processed_content'],
+                    content_type='document' if len(entry_ids) == 0 else 'text',
+                    file_path=persistent_path if len(entry_ids) == 0 else None,
+                    is_content_idea=metadata.get('is_content_idea', False) or ai_result['is_content_idea'],
+                    output_types=metadata.get('output_types', []),
+                    category_hint=ai_result['category'],
+                    subcategory_hint=ai_result.get('subcategory'),
+                    title=ai_result['title']
+                )
+                entry_ids.append((entry_id, ai_result))
+            
+            # Build confirmation
+            if len(entry_ids) == 1:
+                entry_id, ai_result = entry_ids[0]
+                confirmation = f"✅ Document processed! Entry ID: {entry_id}\n"
+                confirmation += f"📁 Category: {ai_result['category']}\n"
+                preview = ai_result['processed_content'][:400]
+                if len(ai_result['processed_content']) > 400:
+                    preview += "..."
+                confirmation += f"\n📋 Analysis:\n{preview}"
+            else:
+                confirmation = f"✅ Created {len(entry_ids)} entries from document!\n\n"
+                for i, (entry_id, ai_result) in enumerate(entry_ids, 1):
+                    confirmation += f"{i}. {ai_result['title'][:40]} (ID: {entry_id})\n"
+            
+            self.send_message(chat_id, confirmation)
             
         except Exception as e:
             logger.error(f"Document handling error: {e}")
