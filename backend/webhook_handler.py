@@ -108,7 +108,57 @@ class WebhookHandler:
     # ========================================
     # Update routing
     # ========================================
-    
+
+    def _check_and_lock(self, chat_id: int, unique_id: str) -> Optional[int]:
+        """
+        Check for existing entry with this unique_id.
+        If found: send message and return None.
+        If not found: create 'PROCESSING_LOCK' entry and return its ID.
+        """
+        if not unique_id:
+            return None
+            
+        session = get_session()
+        try:
+            from sqlalchemy import cast, String
+            # Check ID (cast to string to handle JSON number/string mismatch)
+            existing = session.query(Entry).filter(
+                cast(Entry.entry_metadata['file_unique_id'], String) == f'"{unique_id}"'
+            ).first()
+            
+            if not existing:
+                # Fallback check
+                existing = session.query(Entry).filter(
+                     cast(Entry.entry_metadata['file_unique_id'], String) == unique_id
+                ).first()
+
+            if existing:
+                logger.info(f"Skipping duplicate processing for unique_id: {unique_id}")
+                if existing.raw_content == "PROCESSING_LOCK":
+                     self.send_message(chat_id, "⏳ Still processing this item...")
+                else:
+                     self.send_message(chat_id, f"⚠️ I already processed this! (Entry ID: {existing.id})")
+                return None
+            
+            # Create Lock
+            lock_entry = Entry(
+                raw_content="PROCESSING_LOCK",
+                processed_content="Processing...",
+                content_type='lock',
+                file_path="pending",
+                source='telegram',
+                entry_metadata={'file_unique_id': unique_id}
+            )
+            session.add(lock_entry)
+            session.commit()
+            return lock_entry.id
+            
+        except Exception as e:
+            logger.error(f"Lock check failed: {e}")
+            return None
+        finally:
+            session.close()
+
     def process_update(self, update_json: dict):
         """
         Main entry point: route an incoming update to the appropriate handler.
@@ -212,6 +262,17 @@ class WebhookHandler:
         text = message['text']
         reply_to = message.get('reply_to_message')
         
+        # 1. Generate unique ID for text to prevent race conditions
+        import hashlib
+        # Hash the text (limit length to ensure consistent ID)
+        text_hash = hashlib.sha256(text.encode()).hexdigest()[:32]
+        unique_id = f"text_{text_hash}"
+        
+        # 2. Check Lock
+        lock_entry_id = self._check_and_lock(chat_id, unique_id)
+        if lock_entry_id is None:
+            return
+
         self.send_message(chat_id, "🧠 Processing with AI...")
         
         try:
@@ -267,7 +328,8 @@ class WebhookHandler:
                     category_hint=ai_result['category'],
                     subcategory_hint=ai_result.get('subcategory'),
                     title=ai_result['title'],
-                    source_url=source_url
+                    source_url=source_url,
+                    lock_entry_id=lock_entry_id if len(entry_ids) == 0 else None
                 )
                 entry_ids.append((entry_id, ai_result))
             
@@ -285,13 +347,14 @@ class WebhookHandler:
             
         except Exception as e:
             logger.error(f"Text processing failed: {e}", exc_info=True)
-            # Fallback: save as-is
+            # Fallback: save as-is (update lock)
             metadata = self._parse_input_metadata(text)
             entry_id = self._process_and_store(
                 content=text,
                 content_type='text',
                 is_content_idea=metadata['is_content_idea'],
-                output_types=metadata['output_types']
+                output_types=metadata['output_types'],
+                lock_entry_id=lock_entry_id
             )
             self.send_message(chat_id, f"✅ Saved (basic mode). Entry ID: {entry_id}")
     
@@ -303,7 +366,14 @@ class WebhookHandler:
             # Get the highest resolution photo
             photo_data = message['photo'][-1]
             file_id = photo_data['file_id']
-            file_name = photo_data.get('file_unique_id', file_id) + '.jpg' # Use unique_id for filename
+            file_unique_id = photo_data.get('file_unique_id')
+            file_name = file_unique_id + '.jpg'
+            
+            # --- LOCK CHECK ---
+            lock_entry_id = self._check_and_lock(chat_id, file_unique_id)
+            if lock_entry_id is None:
+                return
+            # ------------------
             
             file_info = self.get_file(file_id)
             if not file_info:
@@ -354,7 +424,8 @@ class WebhookHandler:
                     output_types=metadata.get('output_types', []),
                     category_hint=ai_result['category'],
                     subcategory_hint=ai_result.get('subcategory'),
-                    title=ai_result['title']
+                    title=ai_result['title'],
+                    lock_entry_id=lock_entry_id if len(entry_ids) == 0 else None
                 )
                 entry_ids.append((entry_id, ai_result))
             
@@ -387,53 +458,13 @@ class WebhookHandler:
             file_id = audio['file_id']
             file_unique_id = audio.get('file_unique_id')
             
-            # --- DEDUPLICATION CHECK ---
-            if file_unique_id:
-                session = get_session()
-                try:
-                    # Fix: use cast for JSONB/JSON text comparison
-                    from sqlalchemy import cast, String
-                    existing = session.query(Entry).filter(
-                        cast(Entry.entry_metadata['file_unique_id'], String) == f'"{file_unique_id}"'
-                    ).first()
-                    
-                    if not existing:
-                        # Fallback: sometimes it's stored without quotes in JSONB
-                        existing = session.query(Entry).filter(
-                             cast(Entry.entry_metadata['file_unique_id'], String) == file_unique_id
-                        ).first()
-
-                    if existing:
-                        logger.info(f"Skipping duplicate audio processing for unique_id: {file_unique_id}")
-                        if existing.raw_content == "PROCESSING_LOCK":
-                             self.send_message(chat_id, "⏳ Still processing this audio...")
-                        else:
-                             self.send_message(chat_id, f"⚠️ I already processed this audio (Entry ID: {existing.id}).")
-                        return
-                    
-                    # CREATE LOCK ENTRY
-                    lock_entry = Entry(
-                        raw_content="PROCESSING_LOCK",
-                        processed_content="Processing...",
-                        content_type='audio',
-                        file_path="pending",
-                        source='telegram',
-                        entry_metadata={'file_unique_id': file_unique_id}
-                    )
-                    session.add(lock_entry)
-                    session.commit()
-                    lock_entry_id = lock_entry.id
-                    
-                except Exception as e:
-                    logger.error(f"Deduplication/Lock check failed: {e}")
-                    # If lock fails, we might still want to proceed, or abort? 
-                    # Abort safest to prevent dupes
-                    return
-                finally:
-                    session.close()
-            else:
-                lock_entry_id = None
-            # ---------------------------
+            # --- LOCK CHECK ---
+            lock_entry_id = self._check_and_lock(chat_id, file_unique_id)
+            if lock_entry_id is None and file_unique_id:
+                # If unique_id exists and we got None, it's a dupe
+                return
+            # Note: if no unique_id (rare), lock_entry_id is None, we proceed without lock
+            # ------------------
 
             file_name = f"{file_unique_id}.ogg" if file_unique_id else f"{file_id}.ogg"
             
@@ -532,9 +563,16 @@ class WebhookHandler:
         try:
             video = message['video']
             file_id = video['file_id']
+            file_unique_id = video.get('file_unique_id')
             mime = video.get('mime_type', 'video/mp4')
             ext = '.' + mime.split('/')[-1] if '/' in mime else '.mp4'
-            file_name = video.get('file_unique_id', file_id) + ext
+            file_name = (file_unique_id or file_id) + ext
+            
+            # --- LOCK CHECK ---
+            lock_entry_id = self._check_and_lock(chat_id, file_unique_id)
+            if lock_entry_id is None and file_unique_id:
+                return
+            # ------------------
             
             file_info = self.get_file(file_id)
             if not file_info:
@@ -586,7 +624,8 @@ class WebhookHandler:
                     output_types=metadata['output_types'],
                     category_hint=ai_result['category'],
                     subcategory_hint=ai_result.get('subcategory'),
-                    title=ai_result['title']
+                    title=ai_result['title'],
+                    lock_entry_id=lock_entry_id if len(entry_ids) == 0 else None
                 )
                 entry_ids.append((entry_id, ai_result))
             
@@ -616,6 +655,14 @@ class WebhookHandler:
         
         try:
             animation = message['animation']
+            file_unique_id = animation.get('file_unique_id')
+            
+            # --- LOCK CHECK ---
+            lock_entry_id = self._check_and_lock(chat_id, file_unique_id)
+            if lock_entry_id is None and file_unique_id:
+                return
+            # ------------------
+            
             file_info = self.get_file(animation['file_id'])
             if not file_info:
                 self.send_message(chat_id, "❌ Failed to get GIF from Telegram")
@@ -659,7 +706,8 @@ class WebhookHandler:
                     output_types=metadata.get('output_types', []),
                     category_hint=ai_result['category'],
                     subcategory_hint=ai_result.get('subcategory'),
-                    title=ai_result['title']
+                    title=ai_result['title'],
+                    lock_entry_id=lock_entry_id if len(entry_ids) == 0 else None
                 )
                 entry_ids.append((entry_id, ai_result))
             
@@ -687,8 +735,15 @@ class WebhookHandler:
         """Handle PDF and other documents."""
         try:
             file_id = doc_data['file_id']
+            file_unique_id = doc_data.get('file_unique_id')
             file_name = doc_data.get('file_name', 'document.pdf')
             mime_type = doc_data.get('mime_type', 'application/pdf')
+            
+            # --- LOCK CHECK ---
+            lock_entry_id = self._check_and_lock(chat_id, file_unique_id)
+            if lock_entry_id is None and file_unique_id:
+                return
+            # ------------------
             
             # Check for GIF/Video sent as file
             if mime_type == 'image/gif' or mime_type == 'video/mp4':
@@ -746,7 +801,8 @@ class WebhookHandler:
                     output_types=metadata.get('output_types', []),
                     category_hint=ai_result['category'],
                     subcategory_hint=ai_result.get('subcategory'),
-                    title=ai_result['title']
+                    title=ai_result['title'],
+                    lock_entry_id=lock_entry_id if len(entry_ids) == 0 else None
                 )
                 entry_ids.append((entry_id, ai_result))
             
