@@ -388,19 +388,21 @@ class WebhookHandler:
             file_unique_id = audio.get('file_unique_id')
             
             # --- DEDUPLICATION CHECK ---
-            # Check if we already have an entry with this file_unique_id in metadata
-            # cast to text to ensure compatibility with JSONB/JSON
             if file_unique_id:
-                existing = self.db.query(Entry).filter(
-                    Entry.entry_metadata['file_unique_id'].astext == file_unique_id
-                ).first()
-                
-                if existing:
-                    logger.info(f"Skipping duplicate audio processing for unique_id: {file_unique_id}")
-                    # Optionally send a message or just return silently. 
-                    # Providing feedback helps user know it wasn't ignored, but "already processed" is good.
-                    self.send_message(chat_id, f"⚠️ I already processed this audio (Entry ID: {existing.id}).")
-                    return
+                session = get_session()
+                try:
+                    existing = session.query(Entry).filter(
+                        Entry.entry_metadata['file_unique_id'].astext == file_unique_id
+                    ).first()
+                    
+                    if existing:
+                        logger.info(f"Skipping duplicate audio processing for unique_id: {file_unique_id}")
+                        self.send_message(chat_id, f"⚠️ I already processed this audio (Entry ID: {existing.id}).")
+                        return
+                except Exception as e:
+                    logger.error(f"Deduplication check failed: {e}")
+                finally:
+                    session.close()
             # ---------------------------
 
             file_name = f"{file_unique_id}.ogg" if file_unique_id else f"{file_id}.ogg"
