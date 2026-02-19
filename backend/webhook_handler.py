@@ -391,10 +391,18 @@ class WebhookHandler:
             if file_unique_id:
                 session = get_session()
                 try:
+                    # Fix: use cast for JSONB/JSON text comparison
+                    from sqlalchemy import cast, String
                     existing = session.query(Entry).filter(
-                        Entry.entry_metadata['file_unique_id'].astext == file_unique_id
+                        cast(Entry.entry_metadata['file_unique_id'], String) == f'"{file_unique_id}"'
                     ).first()
                     
+                    if not existing:
+                        # Fallback: sometimes it's stored without quotes in JSONB
+                        existing = session.query(Entry).filter(
+                             cast(Entry.entry_metadata['file_unique_id'], String) == file_unique_id
+                        ).first()
+
                     if existing:
                         logger.info(f"Skipping duplicate audio processing for unique_id: {file_unique_id}")
                         self.send_message(chat_id, f"⚠️ I already processed this audio (Entry ID: {existing.id}).")

@@ -204,10 +204,23 @@ class SheetsIntegration:
                     val = str(row[col_idx]).strip().lower()
                     exp = str(expected_value).strip().lower()
                     
-                    # Date comparison might need more robustness, but exacting string match is safest for now
-                    if val != exp:
-                        matches = False
-                        break
+                    # FUZZY DATE MATCHING
+                    # If both look like dates, compare them as dates (ignoring time)
+                    from dateutil import parser
+                    try:
+                        # Try parsing both
+                        val_date = parser.parse(val, fuzzy=True)
+                        exp_date = parser.parse(exp, fuzzy=True)
+                        
+                        # Compare YMD only
+                        if val_date.date() != exp_date.date():
+                            matches = False
+                            break
+                    except:
+                        # Fallback to strict string comparison if not dates
+                        if val != exp:
+                            matches = False
+                            break
                 
                 if matches:
                     return row_idx + 1  # Return 1-indexed row number
