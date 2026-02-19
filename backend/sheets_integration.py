@@ -15,31 +15,53 @@ class SheetsIntegration:
     """Google Sheets integration for content ideas"""
     
     def __init__(self):
+        # 1. Sheet IDs (User requested SOCIALMEDIA_SHEET_ID)
+        self.sheet_id = get_env('SOCIALMEDIA_SHEET_ID') or get_env('GOOGLE_SHEET_ID')
+        
+        # 2. Credentials (JSON content vs File Path)
         self.credentials_path = get_env('GOOGLE_SHEETS_CREDENTIALS_PATH')
-        self.sheet_id = get_env('GOOGLE_SHEET_ID')
+        self.credentials_json = get_env('GOOGLE_SHEETS_CREDENTIALS_JSON')
         
-        if not self.credentials_path or not self.sheet_id:
-            raise ValueError("Google Sheets credentials or sheet ID not configured")
+        if not (self.credentials_path or self.credentials_json) or not self.sheet_id:
+            # We warn but don't crash init immediately if mostly used for verified features
+            print("Warning: Google Sheets credentials or SOCIALMEDIA_SHEET_ID not fully configured")
+        
+        self.credentials = None
+        SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+        
+        # Try JSON content first (Vercel)
+        if self.credentials_json:
+            try:
+                creds_dict = json.loads(self.credentials_json)
+                self.credentials = service_account.Credentials.from_service_account_info(
+                    creds_dict, scopes=SCOPES
+                )
+            except Exception as e:
+                print(f"Error parsing GOOGLE_SHEETS_CREDENTIALS_JSON: {e}")
+
+        # Fallback to file path (Local) if JSON didn't work or wasn't provided
+        if not self.credentials and self.credentials_path:
+            # Robust path handling
+            if not os.path.exists(self.credentials_path):
+                # Try looking one directory up 
+                alt_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'credentials', 'google-sheets-creds.json')
+                if os.path.exists(alt_path):
+                    self.credentials_path = alt_path
+                else:
+                    alt_path_2 = os.path.join(os.path.dirname(__file__), '../credentials/google-sheets-creds.json')
+                    if os.path.exists(alt_path_2):
+                            self.credentials_path = alt_path_2
             
-        # Robust path handling
-        if not os.path.exists(self.credentials_path):
-            # Try looking one directory up (common issue when running from backend dir)
-            alt_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'credentials', 'google-sheets-creds.json')
-            if os.path.exists(alt_path):
-                self.credentials_path = alt_path
-            else:
-                # Try absolute path resolution relative to backend
-                alt_path_2 = os.path.join(os.path.dirname(__file__), '../credentials/google-sheets-creds.json')
-                if os.path.exists(alt_path_2):
-                     self.credentials_path = alt_path_2
-        
-        # Initialize credentials
-        self.credentials = service_account.Credentials.from_service_account_file(
-            self.credentials_path,
-            scopes=['https://www.googleapis.com/auth/spreadsheets']
-        )
-        
-        self.service = build('sheets', 'v4', credentials=self.credentials)
+            if os.path.exists(self.credentials_path):
+                self.credentials = service_account.Credentials.from_service_account_file(
+                    self.credentials_path, scopes=SCOPES
+                )
+
+        if self.credentials:
+            self.service = build('sheets', 'v4', credentials=self.credentials)
+        else:
+            self.service = None
+            print("Google Sheets Service NOT initialized (Missing credentials)")
     
     def append_content_idea(self, idea_description: str, ai_prompt: str, output_types: List[str]) -> bool:
         """
@@ -203,9 +225,10 @@ class SheetsIntegration:
                          lessons: str = None) -> Dict:
         """
         Log entry to the Trading Journal.
-        sheet_id: 1dNB-i8GoYDR4upLYN-swX6G2wZn1rCnEE7SDnRf1BP8
+        Uses TRADINGJOURNAL_SHEET_ID or falls back to hardcoded default.
         """
-        TRADING_SHEET_ID = '1dNB-i8GoYDR4upLYN-swX6G2wZn1rCnEE7SDnRf1BP8'
+        DEFAULT_TRADING_ID = '1dNB-i8GoYDR4upLYN-swX6G2wZn1rCnEE7SDnRf1BP8'
+        TRADING_SHEET_ID = get_env('TRADINGJOURNAL_SHEET_ID') or get_env('TRADING_JOURNAL_SHEET_ID', DEFAULT_TRADING_ID)
         SHEET_NAME = "Journal"
         
         # 1. Find the row (Reverse chronological)

@@ -385,7 +385,25 @@ class WebhookHandler:
         try:
             audio = message.get('voice') or message.get('audio')
             file_id = audio['file_id']
-            file_name = audio.get('file_unique_id', file_id) + '.ogg' # Use unique_id for filename
+            file_unique_id = audio.get('file_unique_id')
+            
+            # --- DEDUPLICATION CHECK ---
+            # Check if we already have an entry with this file_unique_id in metadata
+            # cast to text to ensure compatibility with JSONB/JSON
+            if file_unique_id:
+                existing = self.db.query(Entry).filter(
+                    Entry.entry_metadata['file_unique_id'].astext == file_unique_id
+                ).first()
+                
+                if existing:
+                    logger.info(f"Skipping duplicate audio processing for unique_id: {file_unique_id}")
+                    # Optionally send a message or just return silently. 
+                    # Providing feedback helps user know it wasn't ignored, but "already processed" is good.
+                    self.send_message(chat_id, f"⚠️ I already processed this audio (Entry ID: {existing.id}).")
+                    return
+            # ---------------------------
+
+            file_name = f"{file_unique_id}.ogg" if file_unique_id else f"{file_id}.ogg"
             
             file_info = self.get_file(file_id)
             if not file_info:
@@ -831,6 +849,9 @@ INSTRUCTIONS:
 3. **Media/Links**: detailed log entry with the Title and Metadata. Do not hallucinate content you don't see.
 
 **SPECIAL HANDLING**:
+- **Content Ideas**: If the input sounds like a blog post, video idea, social media post, or business idea:
+    - Set `is_content_idea` to true.
+    - Set `category` to "Content Ideas".
 - **Trading Journal**: If the input mentions "Trading Journal", "Trade", "Sold", "Bought" with a stock symbol (e.g., AAPL, TSLA) and/or date:
     - Set `intent` to "trade_journal".
     - Extract `date` (format: MM/DD/YYYY, default to today if "today" mentioned).
