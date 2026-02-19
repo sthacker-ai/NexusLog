@@ -405,12 +405,34 @@ class WebhookHandler:
 
                     if existing:
                         logger.info(f"Skipping duplicate audio processing for unique_id: {file_unique_id}")
-                        self.send_message(chat_id, f"⚠️ I already processed this audio (Entry ID: {existing.id}).")
+                        if existing.raw_content == "PROCESSING_LOCK":
+                             self.send_message(chat_id, "⏳ Still processing this audio...")
+                        else:
+                             self.send_message(chat_id, f"⚠️ I already processed this audio (Entry ID: {existing.id}).")
                         return
+                    
+                    # CREATE LOCK ENTRY
+                    lock_entry = Entry(
+                        raw_content="PROCESSING_LOCK",
+                        processed_content="Processing...",
+                        content_type='audio',
+                        file_path="pending",
+                        source='telegram',
+                        entry_metadata={'file_unique_id': file_unique_id}
+                    )
+                    session.add(lock_entry)
+                    session.commit()
+                    lock_entry_id = lock_entry.id
+                    
                 except Exception as e:
-                    logger.error(f"Deduplication check failed: {e}")
+                    logger.error(f"Deduplication/Lock check failed: {e}")
+                    # If lock fails, we might still want to proceed, or abort? 
+                    # Abort safest to prevent dupes
+                    return
                 finally:
                     session.close()
+            else:
+                lock_entry_id = None
             # ---------------------------
 
             file_name = f"{file_unique_id}.ogg" if file_unique_id else f"{file_id}.ogg"
@@ -471,7 +493,8 @@ class WebhookHandler:
                     output_types=metadata['output_types'],
                     category_hint=ai_result['category'],
                     subcategory_hint=ai_result.get('subcategory'),
-                    title=ai_result['title']
+                    title=ai_result['title'],
+                    lock_entry_id=lock_entry_id if len(entry_ids) == 0 else None
                 )
                 entry_ids.append((entry_id, ai_result))
             
@@ -963,7 +986,8 @@ Respond ONLY with valid JSON:
         category_hint: str = None,
         subcategory_hint: str = None,
         title: str = None,
-        source_url: str = None
+        source_url: str = None,
+        lock_entry_id: int = None
     ) -> int:
         """Process content and store in database. Returns entry ID."""
         session = get_session()
@@ -989,22 +1013,61 @@ Respond ONLY with valid JSON:
             else:
                 category_info = self.category_manager.suggest_category(content)
             
-            # Create entry
-            entry = Entry(
-                raw_content=content,
-                processed_content=content,
-                content_type=content_type,
-                file_path=file_path,
-                category_id=category_info.get('category_id'),
-                subcategory_id=category_info.get('subcategory_id'),
-                source='telegram',
-                entry_metadata={
-                    'is_content_idea': is_content_idea or category_info.get('is_content_idea', False),
-                    'output_types': output_types or [],
-                    'source_url': source_url
-                }
-            )
-            session.add(entry)
+            # Create or Update entry
+            if lock_entry_id:
+                entry = session.query(Entry).get(lock_entry_id)
+                if entry:
+                    entry.raw_content = content
+                    entry.processed_content = content
+                    entry.content_type = content_type
+                    entry.file_path = file_path
+                    entry.category_id = category_info.get('category_id')
+                    entry.subcategory_id = category_info.get('subcategory_id')
+                    # Merge metadata
+                    new_meta = {
+                        'is_content_idea': is_content_idea or category_info.get('is_content_idea', False),
+                        'output_types': output_types or [],
+                        'source_url': source_url,
+                        # preserve existing metadata like file_unique_id
+                    }
+                    if entry.entry_metadata:
+                        entry.entry_metadata.update(new_meta)
+                    else:
+                        entry.entry_metadata = new_meta
+                else:
+                    # Should unlikely happen if locked, but fallback to create
+                    entry = Entry(
+                        raw_content=content,
+                        processed_content=content,
+                        content_type=content_type,
+                        file_path=file_path,
+                        category_id=category_info.get('category_id'),
+                        subcategory_id=category_info.get('subcategory_id'),
+                        source='telegram',
+                        entry_metadata={
+                            'is_content_idea': is_content_idea or category_info.get('is_content_idea', False),
+                            'output_types': output_types or [],
+                            'source_url': source_url
+                        }
+                    )
+                    session.add(entry)
+            else:
+                entry = Entry(
+                    raw_content=content,
+                    processed_content=content,
+                    content_type=content_type,
+                    file_path=file_path,
+                    category_id=category_info.get('category_id'),
+                    subcategory_id=category_info.get('subcategory_id'),
+                    source='telegram',
+                    entry_metadata={
+                        'is_content_idea': is_content_idea or category_info.get('is_content_idea', False),
+                        'output_types': output_types or [],
+                        'source_url': source_url
+                    }
+                )
+                session.add(entry)
+        
             session.flush()
             
             # If it's a content idea, create ContentIdea entry
